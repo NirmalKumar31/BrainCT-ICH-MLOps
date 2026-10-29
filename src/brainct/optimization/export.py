@@ -247,6 +247,9 @@ def main(argv: list[str] | None = None) -> None:
         val_pred = chain_predictions(model, val)
         test_pred = chain_predictions(model, test)
         print(f"{precision}: chain on val+test in {time.time() - t0:.0f} s")
+        for split, pred in (("val", val_pred), ("test", test_pred)):
+            for head in ("cnn", "seq"):
+                np.savez(work / f"chain_{precision}_{head}_{split}.npz", **pred[head])
         results[precision] = {}
         for head in ("cnn", "seq"):
             fitted = fit_on_validation(val_pred[head])
