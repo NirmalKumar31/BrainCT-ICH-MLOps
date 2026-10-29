@@ -19,6 +19,11 @@ class Settings:
     drift_min_count: int = 200
     warmup: bool = True
     verify_bundle: bool = True
+    precision: str = "auto"  # auto | int8 | fp32 (auto: INT8 unless the self-test fails)
+    batching: bool = True  # cross-request micro-batching of CNN calls
+    max_batch: int = 32
+    max_wait_ms: float = 4.0
+    feedback_window: int = 2000  # study-level (label, probability) pairs for live metrics
     log_level: str = "INFO"
 
     @classmethod

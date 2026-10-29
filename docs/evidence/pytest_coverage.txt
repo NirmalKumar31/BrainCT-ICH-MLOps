@@ -1,0 +1,21 @@
+........................................................................ [ 80%]
+.................                                                        [100%]
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.12.13-final-0 _______________
+
+Name                                 Stmts   Miss  Cover   Missing
+------------------------------------------------------------------
+src/brainct/data/ingest.py             207     45    78%   47, 52-53, 77, 89, 93, 115, 117, 121-122, 141-144, 204-206, 231, 247-295, 299
+src/brainct/data/split.py               61      1    98%   93
+src/brainct/evaluation.py               88      1    99%   189
+src/brainct/metrics.py                 109      2    98%   92, 132
+src/brainct/preprocessing/dicom.py      49      4    92%   55, 65-66, 68
+src/brainct/serving/app.py             271      4    99%   120, 468, 470, 524
+src/brainct/serving/batching.py         74      5    93%   71, 77-80
+src/brainct/serving/model.py           119      6    95%   73-74, 95, 132, 155, 173
+src/brainct/serving/series.py           71      3    96%   47, 78, 92
+------------------------------------------------------------------
+TOTAL                                 1276     71    94%
+
+11 files skipped due to complete coverage.
+89 passed in 19.19s

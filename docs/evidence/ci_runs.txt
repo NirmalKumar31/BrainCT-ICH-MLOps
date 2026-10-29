@@ -1,0 +1,4 @@
+completed	success	Results: 2x2 ablation, certified INT8 bundle, benchmarks, Kubernetes …	CI	main	push	40949800365	5m12s	2026-10-29T20:31:33Z
+completed	success	CI: compare exported requirements in place; regression gates for the …	CI	main	push	40933314785	4m7s	2026-10-29T18:42:20Z
+completed	failure	Commit the data package; anchor ignore patterns to the repo root	CI	main	push	40932410827	5m2s	2026-10-29T18:36:31Z
+completed	failure	Pipeline, service, tests and deployment for 2.5D + series ICH detection	CI	main	push	40932205638	14s	2026-10-29T18:35:12Z

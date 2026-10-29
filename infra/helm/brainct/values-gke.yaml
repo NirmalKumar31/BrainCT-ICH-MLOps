@@ -1,0 +1,15 @@
+# GKE Autopilot (infra/terraform). Autopilot bills requests, so requests = limits.
+image:
+  repository: us-central1-docker.pkg.dev/PROJECT/brainct/brainct-api   # --set at install
+  pullPolicy: IfNotPresent
+resources:
+  requests: { cpu: "2", memory: 2Gi }
+  limits: { cpu: "2", memory: 2Gi }
+env:
+  BRAINCT_THREADS: "2"
+  BRAINCT_MAX_CONCURRENCY: "1"
+  BRAINCT_BATCHING: "true"
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60

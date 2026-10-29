@@ -35,10 +35,13 @@ from prometheus_client import (
 from brainct import __version__
 from brainct.constants import DISCLAIMER
 from brainct.monitoring.drift import DriftMonitor, slice_features
+from brainct.monitoring.performance import PerformanceMonitor
 from brainct.preprocessing import window
-from brainct.serving.model import InferenceModel
+from brainct.serving.batching import MicroBatcher
+from brainct.serving.model import InferenceModel, RawOutput, contexts
 from brainct.serving.schemas import (
     ErrorResponse,
+    Feedback,
     Heatmap,
     ModelRef,
     SeriesResponse,
@@ -56,6 +59,8 @@ ENDPOINTS = {
     "/v1/predict/slice",
     "/v1/model",
     "/v1/drift",
+    "/v1/feedback",
+    "/v1/performance",
     "/health",
     "/ready",
     "/metrics",
@@ -159,6 +164,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     m_info = Gauge(
         "brainct_model_info", "Loaded model version", ["name", "version"], registry=registry
     )
+    m_precision = Gauge(
+        "brainct_precision",
+        "CNN precision serving (self-test may force fp32)",
+        ["precision"],
+        registry=registry,
+    )
     m_inflight = Gauge("brainct_inflight_inferences", "Model calls running", registry=registry)
     m_psi = Gauge(
         "brainct_drift_psi", "PSI of live vs training distribution", ["feature"], registry=registry
@@ -167,7 +178,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "brainct_drift_window_count", "Values in the drift window", ["feature"], registry=registry
     )
 
-    state: dict[str, Any] = {"model": None, "error": None, "drift": None}
+    m_batch = Histogram(
+        "brainct_batch_slices",
+        "Slices per micro-batched CNN call",
+        buckets=(1, 2, 4, 8, 16, 24, 32, 48, 64),
+        registry=registry,
+    )
+    m_feedback = Counter(
+        "brainct_feedback", "Ground-truth feedback received", ["result"], registry=registry
+    )
+    m_live = Gauge(
+        "brainct_live_metric",
+        "Study-level quality on labelled feedback (sliding window)",
+        ["label", "metric"],
+        registry=registry,
+    )
+
+    state: dict[str, Any] = {
+        "model": None,
+        "error": None,
+        "drift": None,
+        "batcher": None,
+        "perf": None,
+    }
     gate = asyncio.Semaphore(settings.max_concurrency)
 
     @asynccontextmanager
@@ -175,7 +208,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # A failed load leaves /health up and /ready at 503, so Kubernetes can tell
         # "process alive" from "able to serve" and keeps the pod out of the Service.
         try:
-            model = InferenceModel(settings.bundle, settings.threads, settings.verify_bundle)
+            model = InferenceModel(
+                settings.bundle, settings.threads, settings.verify_bundle, settings.precision
+            )
             if settings.warmup:
                 size = model.image_size
                 model.run(np.zeros((4, size, size), dtype=np.int16), with_fmap=True)
@@ -185,14 +220,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 settings.drift_window,
                 settings.drift_min_count,
             )
+            state["perf"] = PerformanceMonitor(model.labels, window=settings.feedback_window)
+            if settings.batching:
+                state["batcher"] = MicroBatcher(
+                    model.cnn_forward, settings.max_batch, settings.max_wait_ms, m_batch.observe
+                )
+                await state["batcher"].start()
             m_loaded.set(1)
             m_info.labels(model.name, model.version).set(1)
-            log.info("model loaded", extra={"fields": {"version": model.version}})
+            m_precision.labels(model.precision).set(1)
+            level = logging.WARNING if model.selftest.get("passed") is False else logging.INFO
+            fields = {
+                "version": model.version,
+                "precision": model.precision,
+                "selftest": model.selftest,
+            }
+            log.log(level, "model loaded", extra={"fields": fields})
         except Exception as exc:
             state["error"] = f"{type(exc).__name__}: {exc}"
             m_loaded.set(0)
             log.error("model load failed", extra={"fields": {"error": state["error"]}})
         yield
+        if state["batcher"] is not None:
+            await state["batcher"].stop()
 
     app = FastAPI(
         title="BrainCT intracranial hemorrhage detection (research use only)",
@@ -205,6 +255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def observe(request: Request, call_next):
         start = time.perf_counter()
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+        request.state.rid = rid
         response = await call_next(request)
         path = request.url.path
         endpoint = path if path in ENDPOINTS else "other"  # bounded label cardinality
@@ -249,6 +300,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             finally:
                 m_inflight.dec()
 
+    async def run_model(model: InferenceModel, vol: np.ndarray, with_seq: bool, explain: bool):
+        """CNN (+ series model). Explain needs the feature map, so it bypasses the batcher."""
+        batcher: MicroBatcher | None = state["batcher"]
+        if batcher is None or explain:
+            return await infer(model.run, vol, with_seq, explain)
+        m_inflight.inc()
+        try:
+            logits, emb = await batcher.submit(contexts(vol, model.context))
+            seq = await run_in_threadpool(model.seq_forward, emb, logits) if with_seq else None
+        finally:
+            m_inflight.dec()
+        return RawOutput(logits, seq, None)
+
     def slice_prediction(model, probs, head, i, info) -> SlicePrediction:
         thr = model.thresholds(head)
         return SlicePrediction(
@@ -275,11 +339,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/ready", responses={503: {"model": ErrorResponse}})
     async def ready() -> dict[str, str]:
         model = require_model()
-        return {"status": "ready", "model": model.name, "version": model.version}
+        return {
+            "status": "ready",
+            "model": model.name,
+            "version": model.version,
+            "precision": model.precision,
+        }
 
     @app.get("/metrics")
     async def metrics() -> Response:
         if state["drift"] is not None:
+            for label, stats in state["perf"].snapshot().items():
+                for metric in ("auc", "brier", "ece", "count"):
+                    if stats[metric] is not None:
+                        m_live.labels(label, metric).set(stats[metric])
             for name, s in state["drift"].snapshot().items():
                 m_drift_n.labels(name).set(s["count"])
                 if s["psi"] is not None:
@@ -297,9 +370,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "thresholds": card["thresholds"],
             "metrics_test": card.get("metrics_test"),
             "intended_use": card.get("intended_use"),
+            "precision": model.precision,
+            "selftest": model.selftest,
             "created": card.get("provenance", {}).get("created"),
             "git_sha": card.get("provenance", {}).get("git_sha"),
         }
+
+    @app.post(
+        "/v1/feedback", responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}}
+    )
+    async def feedback(body: Feedback) -> dict[str, Any]:
+        """Ground truth for an earlier series prediction (study level), by its x-request-id."""
+        require_model()
+        try:
+            joined = state["perf"].feedback(body.request_id, body.labels)
+        except ValueError as exc:
+            m_feedback.labels("invalid").inc()
+            raise HTTPException(422, str(exc)) from exc
+        if not joined:
+            m_feedback.labels("unknown_request").inc()
+            raise HTTPException(404, "unknown or expired request_id")
+        m_feedback.labels("joined").inc()
+        return {"status": "recorded"}
+
+    @app.get("/v1/performance")
+    async def performance() -> dict[str, Any]:
+        require_model()
+        return {"window": settings.feedback_window, "labels": state["perf"].snapshot()}
 
     @app.get("/v1/drift")
     async def drift() -> dict[str, Any]:
@@ -308,6 +405,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/predict/series", response_model=SeriesResponse, responses=ERRORS)
     async def predict_series(
+        request: Request,
         files: Annotated[
             list[UploadFile], File(description="DICOM slices of one series, or one .zip")
         ],
@@ -346,7 +444,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except UploadError as exc:
             raise HTTPException(exc.status, exc.detail) from exc
         t1 = time.perf_counter()
-        raw = await infer(model.run, vol.hu, True, explain)
+        raw = await run_model(model, vol.hu, True, explain)
         t2 = time.perf_counter()
 
         probs = model.calibrate(raw.seq_logits, "seq")
@@ -371,6 +469,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for k in subtypes:
             m_positive.labels(k).inc()
         observe_drift(vol.hu, probs[:, 0])
+        state["perf"].record(request.state.rid, study_p)
         hm = None
         if explain and raw.fmap is not None:
             label = (
@@ -409,7 +508,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except UploadError as exc:
             raise HTTPException(exc.status, exc.detail) from exc
         t1 = time.perf_counter()
-        raw = await infer(model.run, hu[None], False, explain)
+        raw = await run_model(model, hu[None], False, explain)
         t2 = time.perf_counter()
         probs = model.calibrate(raw.cnn_logits, "cnn")
         observe_drift(hu[None], probs[:, 0])

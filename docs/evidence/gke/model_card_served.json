@@ -1,0 +1,12 @@
+{
+  "name": "brainct-ich",
+  "version": "0.2.1",
+  "precision": "int8",
+  "selftest": {
+    "status": "run",
+    "max_prob_diff": 0.019986066692559534,
+    "limit": 0.02,
+    "passed": true
+  },
+  "git_sha": "093561f6b68ef74bc98054a32bb0c7ab87954869"
+}

@@ -1,0 +1,11 @@
+# Build the API image on amd64 (GKE nodes) and push to Artifact Registry.
+#   gcloud builds submit --config cloud/cloudbuild.yaml \
+#     --substitutions=_IMAGE=<registry>/brainct-api:<tag>,_BUNDLE=artifacts/bundle .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, -f, serving/Dockerfile, --build-arg, "BUNDLE=${_BUNDLE}",
+           --build-arg, "GIT_SHA=${_GIT_SHA}", -t, "${_IMAGE}", .]
+images: ["${_IMAGE}"]
+substitutions:
+  _BUNDLE: artifacts/bundle
+  _GIT_SHA: unknown

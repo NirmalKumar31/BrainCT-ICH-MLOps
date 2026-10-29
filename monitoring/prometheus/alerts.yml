@@ -29,3 +29,13 @@ groups:
         labels: { severity: critical }
         annotations:
           summary: "A pod is running without a loaded model (bundle missing or checksum mismatch)"
+      - alert: BrainCTLiveQualityDrop
+        # Needs labelled feedback; 200 studies keeps one bad day from paging.
+        expr: |
+          min by (label) (brainct_live_metric{metric="auc"}) < 0.85
+            and on (label) min by (label) (brainct_live_metric{metric="count"}) >= 200
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "Live study AUC for {{ $labels.label }} below 0.85 on labelled feedback"
+          description: "Ground truth says the model got worse. Compare with drift panels; consider rollback to the previous bundle."

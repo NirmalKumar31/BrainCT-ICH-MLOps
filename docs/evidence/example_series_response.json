@@ -1,0 +1,107 @@
+{
+  "model": {
+    "name": "brainct-ich",
+    "version": "0.2.1",
+    "head": "seq"
+  },
+  "study": {
+    "hemorrhage": true,
+    "screening_positive": true,
+    "probabilities": {
+      "any": 0.37019,
+      "epidural": 0.00818,
+      "intraparenchymal": 0.24027,
+      "intraventricular": 0.00245,
+      "subarachnoid": 0.05192,
+      "subdural": 0.13036
+    },
+    "subtypes": [],
+    "key_slice": 11
+  },
+  "slices": [
+    {
+      "index": 9,
+      "instance_number": 10,
+      "z": 45.0,
+      "probabilities": {
+        "any": 0.27789,
+        "epidural": 0.00818,
+        "intraparenchymal": 0.03492,
+        "intraventricular": 0.00097,
+        "subarachnoid": 0.0386,
+        "subdural": 0.13036
+      },
+      "positive": []
+    },
+    {
+      "index": 10,
+      "instance_number": 11,
+      "z": 50.0,
+      "probabilities": {
+        "any": 0.31806,
+        "epidural": 0.00698,
+        "intraparenchymal": 0.21524,
+        "intraventricular": 0.00238,
+        "subarachnoid": 0.04487,
+        "subdural": 0.07215
+      },
+      "positive": []
+    },
+    {
+      "index": 11,
+      "instance_number": 12,
+      "z": 55.0,
+      "probabilities": {
+        "any": 0.37019,
+        "epidural": 0.00818,
+        "intraparenchymal": 0.24027,
+        "intraventricular": 0.00245,
+        "subarachnoid": 0.05192,
+        "subdural": 0.08721
+      },
+      "positive": []
+    },
+    {
+      "index": 12,
+      "instance_number": 13,
+      "z": 60.0,
+      "probabilities": {
+        "any": 0.27875,
+        "epidural": 0.0061,
+        "intraparenchymal": 0.1562,
+        "intraventricular": 0.00176,
+        "subarachnoid": 0.04435,
+        "subdural": 0.0599
+      },
+      "positive": []
+    },
+    {
+      "index": 13,
+      "instance_number": 14,
+      "z": 65.0,
+      "probabilities": {
+        "any": 0.21214,
+        "epidural": 0.00649,
+        "intraparenchymal": 0.01915,
+        "intraventricular": 0.00075,
+        "subarachnoid": 0.03651,
+        "subdural": 0.09563
+      },
+      "positive": []
+    }
+  ],
+  "ordering": "position",
+  "warnings": [],
+  "heatmap": {
+    "slice_index": 11,
+    "label": "any",
+    "png_base64": "<base64 PNG: see heatmap_synthetic_phantom.png>"
+  },
+  "timing": {
+    "decode_ms": 65.49816601909697,
+    "inference_ms": 119.52666705474257,
+    "total_ms": 201.8715830054134
+  },
+  "disclaimer": "Research use only. Not a medical device. Not for diagnosis or any clinical decision.",
+  "_note": "synthetic phantom series (24 slices, bright lesion on slices 10-12); excerpt"
+}

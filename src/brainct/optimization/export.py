@@ -143,6 +143,23 @@ def write_card(out: Path, card: dict) -> None:
     (out / "model_card.json").write_text(json.dumps(card, indent=2))
 
 
+def selftest_volume(size: int = IMAGE_SIZE, slices: int = 12) -> np.ndarray:
+    """Deterministic head-like HU phantom (air, skull, brain, a bright lesion) for the
+    startup self-test. Synthetic on purpose: it is shipped inside the image."""
+    rng = np.random.default_rng(1234)
+    yy, xx = np.mgrid[:size, :size]
+    r = np.hypot(yy - size / 2, xx - size / 2) / (size / 2)
+    vol = []
+    for i in range(slices):
+        hu = np.full((size, size), -1000.0)
+        hu[r < 0.80 - 0.01 * i] = 1000.0
+        hu[r < 0.72 - 0.01 * i] = 35.0
+        if 4 <= i <= 7:
+            hu[np.hypot(yy - size * 0.4, xx - size * 0.6) < size * (0.03 + 0.01 * i)] = 70.0
+        vol.append(hu + rng.normal(0, 4, hu.shape) * (r < 0.8))
+    return np.rint(np.stack(vol)).astype(np.int16)
+
+
 def git_sha() -> str:
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
@@ -157,6 +174,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--calib-slices", type=int, default=384)
     ap.add_argument("--boot", type=int, default=1000)
     ap.add_argument("--max-series", type=int, default=None, help="smoke runs only")
+    ap.add_argument("--data-dir", type=Path, default=None, help="override the run's data_dir")
     args = ap.parse_args(argv)
     torch.set_num_threads(8)
 
@@ -177,7 +195,7 @@ def main(argv: list[str] | None = None) -> None:
     export_seq(seq, sck["embed_dim"], work / "seq.onnx")
     np.save(work / "cam_weights.npy", net.head.weight.detach().numpy().astype(np.float32))
 
-    data_dir = Path(cfg["data_dir"])
+    data_dir = args.data_dir or Path(cfg["data_dir"])
     val = load_series(data_dir, "val")[: args.max_series]
     test = load_series(data_dir, "test")[: args.max_series]
     train = load_series(data_dir, "train")
@@ -209,10 +227,16 @@ def main(argv: list[str] | None = None) -> None:
         SliceReader(calibration_batches(train, cfg["context"], args.calib_slices, seed=7)),
         quant_format=QuantFormat.QDQ,
         per_channel=True,
-        weight_type=QuantType.QInt8,
+        # uint8 weights: on x86 without VNNI (AVX2 only, e.g. AMD EPYC Milan on GKE) ONNX
+        # Runtime's u8 x s8 kernel saturates its 16-bit intermediates; int8 weights were off by
+        # up to 0.25 in probability there vs 0.09 on ARM. u8 x u8 matched on both CPUs and was
+        # the most accurate on real slices (scripts/quant_variants.py, docs/evidence).
+        weight_type=QuantType.QUInt8,
         activation_type=QuantType.QUInt8,
         calibrate_method=CalibrationMethod.Percentile,
         nodes_to_exclude=excluded,
+        # reduce_range (7-bit weights) was tried and rejected: it cost 0.08 macro AUC through
+        # the series model.
         extra_options={"CalibPercentile": 99.99},
     )
     print(f"quantized in {time.time() - t0:.0f} s; FP32 nodes kept: {excluded}")
@@ -262,6 +286,25 @@ def main(argv: list[str] | None = None) -> None:
     # ---- final bundle = INT8 chain
     stage, card, val_pred = chains["int8"]
     res = results["int8"]
+    # FP32 fallback + self-test golden outputs: the *certified* INT8 logits on a synthetic
+    # phantom, computed here. Each pod reproduces them on its own CPU at startup; if it cannot,
+    # this CPU's INT8 kernels are not the ones that were certified, and the pod serves FP32.
+    shutil.copy(work / "cnn.fp32.onnx", stage / "cnn_fp32.onnx")
+    vol = selftest_volume()
+    from brainct.serving.model import contexts as _ctx
+
+    x = _ctx(vol, cfg["context"])
+    fp32_sess = ort.InferenceSession(
+        str(stage / "cnn_fp32.onnx"), providers=["CPUExecutionProvider"]
+    )
+    int8_sess = ort.InferenceSession(str(stage / "cnn.onnx"), providers=["CPUExecutionProvider"])
+    golden = fp32_sess.run(["logits"], {"hu": x})[0]
+    here = int8_sess.run(["logits"], {"hu": x})[0]
+    np.savez(stage / "selftest.npz", volume=vol, certified_logits=here, fp32_logits=golden)
+    build_diff = float(np.abs(1 / (1 + np.exp(-here)) - 1 / (1 + np.exp(-golden))).max())
+    card["selftest"] = {"max_prob_diff": 0.02, "int8_vs_fp32_on_build_machine": build_diff}
+    card["_files"] |= {"cnn_fp32": "cnn_fp32.onnx", "selftest": "selftest.npz"}
+    print(f"self-test golden written; INT8 vs FP32 on build machine: {build_diff:.4f}")
     card["calibration"] = {h: res[h]["fitted"]["calibration"] for h in ("cnn", "seq")}
     card["thresholds"] = {
         h: {

@@ -1,0 +1,143 @@
+{
+  "name": "brainct-ich",
+  "version": "0.2.1",
+  "contract": {
+    "labels": [
+      "any",
+      "epidural",
+      "intraparenchymal",
+      "intraventricular",
+      "subarachnoid",
+      "subdural"
+    ],
+    "context": 0,
+    "image_size": 224,
+    "windows": [
+      [
+        40.0,
+        80.0
+      ],
+      [
+        80.0,
+        200.0
+      ],
+      [
+        600.0,
+        2800.0
+      ]
+    ],
+    "input": "HU, int16-rounded, padded square + area-resized",
+    "batch": 16
+  },
+  "thresholds": {
+    "cnn": {
+      "any": 0.3869348258153144,
+      "epidural": 0.06883760676564782,
+      "intraparenchymal": 0.33293014303887947,
+      "intraventricular": 0.40863411215923684,
+      "subarachnoid": 0.26905638697176654,
+      "subdural": 0.1826052042784777,
+      "screening_any": 0.029835605929279304,
+      "study_any": 0.5359614601133309
+    },
+    "seq": {
+      "any": 0.37771675539615673,
+      "epidural": 0.07511340835194495,
+      "intraparenchymal": 0.4009619306433294,
+      "intraventricular": 0.31802206074384404,
+      "subarachnoid": 0.24351803391476864,
+      "subdural": 0.2869789036897325,
+      "screening_any": 0.03040124883351521,
+      "study_any": 0.30349975884828934
+    }
+  },
+  "metrics_test": {
+    "fp32": {
+      "cnn": {
+        "auc_macro": 0.9025037067369873,
+        "auc_macro_ci": [
+          0.8440312545900422,
+          0.9395643719470143
+        ],
+        "weighted_log_loss": 0.1334815724298091,
+        "study_any_auc": 0.9531211346582007,
+        "auc": {
+          "any": 0.940156686600591,
+          "epidural": 0.7341688142055283,
+          "intraparenchymal": 0.9581095633205859,
+          "intraventricular": 0.9596678317324057,
+          "subarachnoid": 0.9066142774632271,
+          "subdural": 0.9163050670995861
+        }
+      },
+      "seq": {
+        "auc_macro": 0.9198041875124462,
+        "auc_macro_ci": [
+          0.8577754315081937,
+          0.9562727495957936
+        ],
+        "weighted_log_loss": 0.12172926384093048,
+        "study_any_auc": 0.9530799043456749,
+        "auc": {
+          "any": 0.952632519473209,
+          "epidural": 0.751487979666043,
+          "intraparenchymal": 0.9693704009222316,
+          "intraventricular": 0.9742880922532814,
+          "subarachnoid": 0.9317610014282428,
+          "subdural": 0.9392851313316687
+        }
+      }
+    },
+    "int8": {
+      "cnn": {
+        "auc_macro": 0.9038472595581252,
+        "auc_macro_ci": [
+          0.8411844570033776,
+          0.9418329762862045
+        ],
+        "weighted_log_loss": 0.13479042261609303,
+        "study_any_auc": 0.9468747423105467,
+        "auc": {
+          "any": 0.9380705865237685,
+          "epidural": 0.7432084818959532,
+          "intraparenchymal": 0.9567818276890367,
+          "intraventricular": 0.9599678499970943,
+          "subarachnoid": 0.9070730265086059,
+          "subdural": 0.9179817847342927
+        }
+      },
+      "seq": {
+        "auc_macro": 0.9203146008957157,
+        "auc_macro_ci": [
+          0.8548146086717388,
+          0.9574147889597325
+        ],
+        "weighted_log_loss": 0.12314061889635926,
+        "study_any_auc": 0.9486682609054177,
+        "auc": {
+          "any": 0.9509754002072729,
+          "epidural": 0.7595909673927113,
+          "intraparenchymal": 0.9672030244041621,
+          "intraventricular": 0.9738711177159177,
+          "subarachnoid": 0.930971228565232,
+          "subdural": 0.9392758670889985
+        }
+      }
+    },
+    "n": {
+      "slices": 10934,
+      "series": 315,
+      "patients": 266
+    }
+  },
+  "intended_use": "Research and engineering demonstration only. Not a medical device; not validated for clinical use. Trained on a 2,065-series sample of RSNA 2019 (single source).",
+  "precision": "int8",
+  "selftest": {
+    "status": "run",
+    "max_prob_diff": 0.0,
+    "limit": 0.02,
+    "passed": true
+  },
+  "created": "2026-10-29T22:06:29+00:00",
+  "git_sha": "093561f6b68ef74bc98054a32bb0c7ab87954869"
+}

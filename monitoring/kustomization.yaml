@@ -5,9 +5,12 @@ resources:
   - namespace.yaml
   - prometheus.yaml
   - grafana.yaml
+  - alertmanager.yaml
 configMapGenerator:
   - name: prometheus-config
     files: [prometheus.yml=prometheus/prometheus.yml, alerts.yml=prometheus/alerts.yml]
+  - name: alertmanager-config
+    files: [alertmanager.yml=alertmanager/alertmanager.yml]
   - name: grafana-dashboards
     files: [brainct.json=grafana/brainct-dashboard.json]
   - name: grafana-provisioning

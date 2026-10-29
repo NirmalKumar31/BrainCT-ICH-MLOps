@@ -1,0 +1,47 @@
+# kubectl state on GKE Autopilot (2026-10-29T22:26:55Z)
+NAME                                     STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP      OS-IMAGE                             KERNEL-VERSION      CONTAINER-RUNTIME
+gk3-brainct-nap-vw1bdl29-35d9b2b8-pg9k   Ready    <none>   60m   v1.36.4-gke.2046003   10.128.0.26   34.135.170.200   Container-Optimized OS from Google   6.12.105+ (amd64)   containerd://2.2.7
+gk3-brainct-nap-vw1bdl29-d1357baf-jk62   Ready    <none>   53m   v1.36.4-gke.2046003   10.128.0.27   35.254.209.208   Container-Optimized OS from Google   6.12.105+ (amd64)   containerd://2.2.7
+
+NAME                              READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                                                SELECTOR
+deployment.apps/brainct-brainct   1/1     1            1           60m   api          us-central1-docker.pkg.dev/rbp-repro-2026/brainct/brainct-api:0.2.1   app.kubernetes.io/instance=brainct,app.kubernetes.io/name=brainct
+
+NAME                                                  REFERENCE                    TARGETS        MINPODS   MAXPODS   REPLICAS   AGE
+horizontalpodautoscaler.autoscaling/brainct-brainct   Deployment/brainct-brainct   cpu: 12%/60%   1         4         2          60m
+
+NAME                                         MIN AVAILABLE   MAX UNAVAILABLE   ALLOWED DISRUPTIONS   AGE
+poddisruptionbudget.policy/brainct-brainct   1               N/A               0                     60m
+
+NAME                      TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE   SELECTOR
+service/brainct-brainct   ClusterIP   34.118.230.239   <none>        80/TCP    60m   app.kubernetes.io/instance=brainct,app.kubernetes.io/name=brainct
+service/kubernetes        ClusterIP   34.118.224.1     <none>        443/TCP   64m   <none>
+
+NAME                                              POD-SELECTOR                                                        AGE
+networkpolicy.networking.k8s.io/brainct-brainct   app.kubernetes.io/instance=brainct,app.kubernetes.io/name=brainct   60m
+
+NAME                               READY   STATUS      RESTARTS   AGE   IP              NODE                                     NOMINATED NODE   READINESS GATES
+brainct-brainct-6dff4bf8b7-dkb26   1/1     Running     0          13m   10.121.128.68   gk3-brainct-nap-vw1bdl29-d1357baf-jk62   <none>           <none>
+brainct-load-6bs2p                 0/1     Completed   0          14m   10.121.128.22   gk3-brainct-nap-vw1bdl29-35d9b2b8-pg9k   <none>           <none>
+
+NAME                               READY   STATUS    RESTARTS   AGE
+pod/alertmanager-b887f8776-jnc44   1/1     Running   0          58m
+pod/grafana-76d657bbf7-xjdwc       1/1     Running   0          58m
+pod/prometheus-7fc475f494-p22v5    1/1     Running   0          58m
+
+NAME                   TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)    AGE
+service/alertmanager   ClusterIP   34.118.234.47    <none>        9093/TCP   58m
+service/grafana        ClusterIP   34.118.231.151   <none>        3000/TCP   58m
+service/prometheus     ClusterIP   34.118.237.38    <none>        9090/TCP   58m
+
+Events:
+  Type     Reason                   Age                 From                       Message
+  ----     ------                   ----                ----                       -------
+  Warning  FailedGetResourceMetric  58m (x7 over 60m)   horizontal-pod-autoscaler  did not receive metrics for targeted pods (pods might be unready)
+  Warning  FailedGetResourceMetric  17m (x10 over 60m)  horizontal-pod-autoscaler  No recommendation
+  Normal   SuccessfulRescale        14m                 horizontal-pod-autoscaler  New size: 2; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale        13m                 horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale        10m                 horizontal-pod-autoscaler  New size: 4; reason: cpu resource utilization (percentage of request) above target
+  Normal   SuccessfulRescale        2m41s               horizontal-pod-autoscaler  New size: 3; reason: cpu resource utilization (percentage of request) below target
+  Normal   SuccessfulRescale        86s                 horizontal-pod-autoscaler  New size: 2; reason: cpu resource utilization (percentage of request) below target
+  Normal   HpaProfilePerformance    10s (x6 over 14m)   horizontal-pod-autoscaler  The HPA rescaled target based on performance profile
+  Normal   SuccessfulRescale        10s                 horizontal-pod-autoscaler  New size: 1; reason: cpu resource utilization (percentage of request) below target

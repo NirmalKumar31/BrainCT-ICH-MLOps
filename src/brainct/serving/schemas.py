@@ -65,3 +65,10 @@ class SliceResponse(BaseModel):
     heatmap: Heatmap | None = None
     timing: Timing
     disclaimer: str = DISCLAIMER
+
+
+class Feedback(BaseModel):
+    request_id: str = Field(description="x-request-id header of the series prediction")
+    labels: dict[str, int] = Field(
+        description='study-level ground truth, e.g. {"any": 1, "subdural": 1}; omit unknowns'
+    )

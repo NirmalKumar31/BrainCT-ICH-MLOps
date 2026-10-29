@@ -1,0 +1,28 @@
+[
+  {
+    "run": "cnn25d_resnet18",
+    "status": "FINISHED",
+    "id": "d88ef2c0",
+    "val_auc_mean": 0.9272,
+    "best_epoch": 3.0
+  },
+  {
+    "run": "cnn25d_resnet18_seq",
+    "status": "FINISHED",
+    "id": "ff78e533",
+    "seq_best_val_wlogloss": 0.1252
+  },
+  {
+    "run": "cnn2d_resnet18",
+    "status": "FINISHED",
+    "id": "2ea98d3a",
+    "val_auc_mean": 0.9347,
+    "best_epoch": 4.0
+  },
+  {
+    "run": "cnn2d_resnet18_seq",
+    "status": "FINISHED",
+    "id": "2fc58fec",
+    "seq_best_val_wlogloss": 0.1225
+  }
+]

@@ -96,7 +96,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: pip install numpy onnx pydicom requests && python scripts/make_standin_bundle.py artifacts/standin
       - name: Build image
-        run: docker build -f serving/Dockerfile --build-arg BUNDLE=artifacts/standin -t brainct-api:0.2.0 .
+        run: docker build -f serving/Dockerfile --build-arg BUNDLE=artifacts/standin -t brainct-api:0.2.1 .
       - uses: helm/kind-action@v1
         with: { cluster_name: brainct }
       - uses: azure/setup-helm@v4
@@ -104,7 +104,7 @@ jobs:
         run: helm lint infra/helm/brainct -f infra/helm/brainct/values-kind.yaml
       - name: Deploy
         run: |
-          kind load docker-image brainct-api:0.2.0 --name brainct
+          kind load docker-image brainct-api:0.2.1 --name brainct
           helm install brainct infra/helm/brainct -f infra/helm/brainct/values-kind.yaml --wait --timeout 5m
           kubectl get pods,svc,hpa,pdb -o wide
       - name: End-to-end through the Service
@@ -121,3 +121,18 @@ jobs:
           kubectl -n brainct-monitoring rollout status deploy/prometheus --timeout 3m
       - if: failure()
         run: kubectl describe pods; kubectl logs -l app.kubernetes.io/name=brainct --tail 100
+
+  terraform:
+    name: terraform fmt · validate · lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run: { working-directory: infra/terraform }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init && tflint

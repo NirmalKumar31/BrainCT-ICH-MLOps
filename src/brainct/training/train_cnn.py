@@ -3,6 +3,10 @@
     uv run python -m brainct.training.train_cnn --config configs/cnn25d_resnet18.yaml
     uv run python -m brainct.training.train_cnn --config ... --set epochs=1 max_train_items=512
 
+Multi-GPU: `torchrun --nproc_per_node N -m brainct.training.train_cnn ...` (DDP; NCCL on CUDA,
+gloo on CPU). Every rank draws the same balanced epoch and trains on its shard; rank 0 alone
+validates, checkpoints, logs to MLflow and writes predictions.
+
 Resumes from <run>/last.pt if present. Model selection uses validation mean ROC AUC (the
 balanced sampler shifts the class prior, so raw log loss is not comparable across epochs;
 probabilities are recalibrated on validation afterwards).
@@ -11,6 +15,7 @@ probabilities are recalibrated on validation afterwards).
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import time
@@ -20,6 +25,8 @@ os.environ.setdefault("MLFLOW_DISABLE_AGENT_HINT", "1")
 import mlflow
 import numpy as np
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from brainct.constants import LABELS
@@ -104,7 +111,23 @@ def main(argv: list[str] | None = None) -> None:
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "config.json").write_text(json.dumps(cfg.to_dict(), indent=2))
     seed_everything(cfg.seed)
+    world = int(os.environ.get("WORLD_SIZE", "1"))
+    rank = int(os.environ.get("RANK", "0"))
+    main_rank = rank == 0
     dev = device()
+    if world > 1:
+        local = int(os.environ.get("LOCAL_RANK", "0"))
+        if dev.type == "cuda":
+            torch.cuda.set_device(local)
+            dev = torch.device("cuda", local)
+        else:
+            dev = torch.device("cpu")  # gloo; MPS has no collective backend
+        dist.init_process_group("nccl" if dev.type == "cuda" else "gloo")
+    cuda = dev.type == "cuda"
+    if cuda:
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     data_dir = Path(cfg.data_dir)
 
     train_series = load_series(data_dir, "train")
@@ -113,6 +136,10 @@ def main(argv: list[str] | None = None) -> None:
     labels_any = train_ds.labels()[:, 0]
 
     model = SliceNet(cfg.backbone, cfg.context, pretrained=cfg.pretrained).to(dev)
+    # NHWC is ~1.3-1.5x faster for convnets on tensor cores; it was slower on Apple MPS.
+    memory_format = torch.channels_last if cuda else torch.contiguous_format
+    model = model.to(memory_format=memory_format)
+    net = model  # unwrapped: evaluation, inference, checkpoints
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     dtype = amp_dtype(dev)
     scaler = torch.amp.GradScaler(dev.type, enabled=dtype == torch.float16)
@@ -121,7 +148,7 @@ def main(argv: list[str] | None = None) -> None:
     per_epoch = len(balanced_epoch(labels_any, cfg.neg_ratio, rng))
     if cfg.max_train_items:
         per_epoch = min(per_epoch, cfg.max_train_items)
-    steps_per_epoch = per_epoch // cfg.batch_size
+    steps_per_epoch = per_epoch // (cfg.batch_size * world)
     total = steps_per_epoch * cfg.epochs
     warmup = max(1, int(cfg.warmup_frac * total))
 
@@ -129,20 +156,25 @@ def main(argv: list[str] | None = None) -> None:
     last = run_dir / "last.pt"
     if last.exists():
         ck = torch.load(last, map_location=dev, weights_only=False)
-        model.load_state_dict(ck["model"])
+        net.load_state_dict(ck["model"])
         opt.load_state_dict(ck["opt"])
         scaler.load_state_dict(ck["scaler"])
         start_epoch, step, best = ck["epoch"] + 1, ck["step"], ck["best"]
         rng = np.random.default_rng(cfg.seed + start_epoch)
         print(f"resumed from epoch {ck['epoch']}")
+    if world > 1:
+        model = DDP(net, device_ids=[dev.index] if cuda else None)
 
-    mlflow.set_tracking_uri(TRACKING_URI)
-    mlflow.set_experiment("brainct")
     run_id_file = run_dir / "mlflow_run_id"
     run_id = run_id_file.read_text().strip() if run_id_file.exists() else None
-    with mlflow.start_run(run_id=run_id, run_name=cfg.run_name) as run:
-        run_id_file.write_text(run.info.run_id)
-        if run_id is None:
+    if main_rank:
+        mlflow.set_tracking_uri(TRACKING_URI)
+        mlflow.set_experiment("brainct")
+    tracking = mlflow.start_run(run_id=run_id, run_name=cfg.run_name) if main_rank else None
+    with tracking or contextlib.nullcontext() as run:
+        if main_rank:
+            run_id_file.write_text(run.info.run_id)
+        if main_rank and run_id is None:
             mlflow.log_params(cfg.to_dict())
             mlflow.log_params(
                 {
@@ -150,12 +182,13 @@ def main(argv: list[str] | None = None) -> None:
                     "train_slices": len(train_ds),
                     "val_series": len(val_series),
                     "device": dev.type,
+                    "world_size": world,
                 }
             )
 
         for epoch in range(start_epoch, cfg.epochs if not args.skip_train else 0):
             model.train()
-            idx = balanced_epoch(labels_any, cfg.neg_ratio, rng)[:per_epoch]
+            idx = balanced_epoch(labels_any, cfg.neg_ratio, rng)[:per_epoch][rank::world]
             loader = DataLoader(
                 Subset(train_ds, idx.tolist()),
                 batch_size=cfg.batch_size,
@@ -163,12 +196,13 @@ def main(argv: list[str] | None = None) -> None:
                 drop_last=True,
                 num_workers=cfg.num_workers,
                 persistent_workers=False,
+                pin_memory=cuda,
                 prefetch_factor=4 if cfg.num_workers else None,
             )
             t0, seen, running = time.time(), 0, 0.0
             for i, (x, y) in enumerate(loader):
                 x, y = x.to(dev, non_blocking=True), y.to(dev, non_blocking=True)
-                x = augment(x)
+                x = augment(x).contiguous(memory_format=memory_format)
                 for g in opt.param_groups:
                     g["lr"] = cosine_lr(step, total, warmup, cfg.lr)
                 with torch.autocast(dev.type, dtype=dtype, enabled=dtype is not None):
@@ -189,19 +223,24 @@ def main(argv: list[str] | None = None) -> None:
                         f"{rate:.0f} img/s",
                         flush=True,
                     )
-                    mlflow.log_metric("train_loss", running, step=step)
+                    if main_rank:
+                        mlflow.log_metric("train_loss", running, step=step)
             train_time = time.time() - t0
+            rng = np.random.default_rng(cfg.seed + epoch + 1)
+            if not main_rank:
+                dist.barrier()  # wait for rank 0 to validate and checkpoint
+                continue
 
-            logits, _ = infer(model, val_series, dev)
+            logits, _ = infer(net, val_series, dev)
             metrics = evaluate(logits, val_series)
-            metrics |= {"epoch_seconds": train_time, "img_per_s": seen / train_time}
+            metrics |= {"epoch_seconds": train_time, "img_per_s": world * seen / train_time}
             mlflow.log_metrics({f"val_{k}": v for k, v in metrics.items()}, step=epoch)
             print(f"epoch {epoch}: " + json.dumps({k: round(v, 4) for k, v in metrics.items()}))
             if metrics["auc_mean"] > best:
                 best = metrics["auc_mean"]
                 torch.save(
                     {
-                        "model": model.state_dict(),
+                        "model": net.state_dict(),
                         "config": cfg.to_dict(),
                         "epoch": epoch,
                         "val": metrics,
@@ -210,7 +249,7 @@ def main(argv: list[str] | None = None) -> None:
                 )
             torch.save(
                 {
-                    "model": model.state_dict(),
+                    "model": net.state_dict(),
                     "opt": opt.state_dict(),
                     "scaler": scaler.state_dict(),
                     "epoch": epoch,
@@ -219,11 +258,16 @@ def main(argv: list[str] | None = None) -> None:
                 },
                 last,
             )
-            rng = np.random.default_rng(cfg.seed + epoch + 1)
+            if world > 1:
+                dist.barrier()
+
+        if not main_rank:
+            dist.destroy_process_group()
+            return
 
         # Predictions of the selected checkpoint for every split (stage 2 + evaluation input).
         ck = torch.load(run_dir / "best.pt", map_location=dev, weights_only=False)
-        model.load_state_dict(ck["model"])
+        net.load_state_dict(ck["model"])
         mlflow.log_metric("best_epoch", ck["epoch"])
         for split in ("train", "val", "test"):
             series = load_series(data_dir, split)
@@ -232,7 +276,7 @@ def main(argv: list[str] | None = None) -> None:
             elif split == "train" and cfg.max_train_items:
                 series = series[: max(4, cfg.max_train_items // 32)]
             t0 = time.time()
-            logits, embs = infer(model, series, dev)
+            logits, embs = infer(net, series, dev)
             save_predictions(run_dir / "predictions" / f"cnn_{split}.npz", series, logits, embs)
             print(f"wrote {split} predictions ({len(series)} series, {time.time() - t0:.0f} s)")
 

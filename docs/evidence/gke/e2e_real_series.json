@@ -1,0 +1,11 @@
+{
+  "series": 60,
+  "positive": 30,
+  "study_auc_api": 0.92,
+  "study_auc_offline_same_series": 0.9222222222222223,
+  "max_abs_prob_diff_api_vs_offline": 0.027409099268187298,
+  "mean_abs_prob_diff_api_vs_offline": 0.0008711139775987873,
+  "tolerance": 0.05,
+  "latency_ms_p50": 1627.086271008011,
+  "latency_ms_p95": 2953.6460792121943
+}

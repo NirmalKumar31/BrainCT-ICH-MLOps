@@ -155,3 +155,45 @@ def test_tampered_bundle_is_rejected(make_client, standin_bundle, tmp_path):
     (copy / "model_card.json").write_text(json.dumps(card))
     r = make_client(bundle=str(copy)).get("/ready")
     assert r.status_code == 503 and "checksum" in r.json()["detail"]
+
+
+def _bundle_with_selftest(src, dst, golden_shift: float):
+    """Stand-in + FP32 fallback (same graph) + golden logits shifted by `golden_shift`."""
+    import hashlib
+    import shutil
+
+    from brainct.serving.model import InferenceModel, contexts
+
+    shutil.copytree(src, dst)
+    shutil.copy(dst / "cnn.onnx", dst / "cnn_fp32.onnx")
+    vol = np.zeros((4, 224, 224), np.int16)
+    m = InferenceModel(dst, verify=False)
+    golden = m.cnn.run(["logits"], {"hu": contexts(vol, m.context)})[0] + golden_shift
+    np.savez(dst / "selftest.npz", volume=vol, certified_logits=golden)
+    card = json.loads((dst / "model_card.json").read_text())
+    for name, path in (("cnn_fp32", "cnn_fp32.onnx"), ("selftest", "selftest.npz")):
+        digest = hashlib.sha256((dst / path).read_bytes()).hexdigest()
+        card["files"][name] = {"path": path, "sha256": digest}
+    card["selftest"] = {"max_prob_diff": 0.02}
+    (dst / "model_card.json").write_text(json.dumps(card))
+    return dst
+
+
+def test_selftest_passes_and_serves_int8(make_client, standin_bundle, tmp_path):
+    b = _bundle_with_selftest(standin_bundle, tmp_path / "ok", golden_shift=0.0)
+    client = make_client(bundle=str(b))
+    assert client.get("/ready").json()["precision"] == "int8"
+    card = client.get("/v1/model").json()
+    assert card["selftest"]["passed"] is True
+    assert 'brainct_precision{precision="int8"} 1.0' in client.get("/metrics").text
+
+
+def test_selftest_failure_falls_back_to_fp32(make_client, standin_bundle, tmp_path):
+    """The GKE incident: INT8 kernels on a non-VNNI x86 CPU diverged from the certified model."""
+    b = _bundle_with_selftest(standin_bundle, tmp_path / "bad", golden_shift=3.0)
+    client = make_client(bundle=str(b))
+    assert client.get("/ready").json()["precision"] == "fp32"
+    st = client.get("/v1/model").json()["selftest"]
+    assert st["passed"] is False and st["max_prob_diff"] > st["limit"]
+    forced = make_client(bundle=str(b), precision="int8")
+    assert forced.get("/ready").json()["precision"] == "int8"

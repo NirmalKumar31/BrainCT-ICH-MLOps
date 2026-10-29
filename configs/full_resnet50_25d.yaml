@@ -1,0 +1,11 @@
+# Full-data 2.5D ablation: does slice context help once data is not the bottleneck?
+run_name: full_resnet50_25d
+backbone: resnet50
+pretrained: true
+context: 1
+epochs: 6
+batch_size: 128
+lr: 8.0e-4
+neg_ratio: 1.25
+context_dropout: 0.1
+num_workers: 14

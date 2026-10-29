@@ -1,0 +1,26 @@
+{
+  "fp32": {
+    "cnn": {
+      "auc_macro": 0.9025,
+      "weighted_log_loss": 0.1335,
+      "study_auc": 0.9531
+    },
+    "seq": {
+      "auc_macro": 0.9198,
+      "weighted_log_loss": 0.1217,
+      "study_auc": 0.9531
+    }
+  },
+  "int8": {
+    "cnn": {
+      "auc_macro": 0.9038,
+      "weighted_log_loss": 0.1348,
+      "study_auc": 0.9469
+    },
+    "seq": {
+      "auc_macro": 0.9203,
+      "weighted_log_loss": 0.1231,
+      "study_auc": 0.9487
+    }
+  }
+}

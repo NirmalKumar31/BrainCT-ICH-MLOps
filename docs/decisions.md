@@ -108,3 +108,34 @@ fires on PSI > 0.2 for 10 minutes.
   the Service, then a rolling restart. The reference project deployed to GKE by hand; this
   repository targets kind/any cluster and verifies the deployment automatically, at no cost.
   No managed-cloud deployment was run for this version.
+
+## Incident: INT8 diverged on the GKE CPU (found by the cloud e2e check)
+
+**What happened.** The bundle certified on the Apple M4 (ARM) was deployed to GKE Autopilot.
+`scripts/e2e_real_series.py` uploads real held-out series and compares served probabilities
+with the certified offline ones: on kind (ARM) they matched within 5e-6; on GKE they differed
+by up to **0.56**. The node was an AMD EPYC 7B13 (Milan): AVX2, no VNNI.
+
+**Why.** Static INT8 with signed weights runs ONNX Runtime's u8×s8 kernel. Without VNNI, x86
+computes those products with saturating 16-bit intermediates; large activations overflow.
+ARM (and x86 with VNNI) do not have this path, so local tests could not see it.
+
+**What was tried** (`scripts/quant_variants.py`, results in `docs/evidence/`):
+
+| Weights | Phantom mean err ARM | Phantom mean err x86 (EPYC) | Real val mean err (ARM) | Deployed chain macro AUC |
+|---|---|---|---|---|
+| int8, full range (shipped first) | 0.014 | 0.035 (max 0.25) | 0.0088 | 0.920 |
+| int8, reduce_range | 0.024 | 0.024 | 0.0117 | **0.843** (series model broke) |
+| **uint8, full range (now)** | 0.020 | 0.021 | **0.0084** | **0.920** |
+| uint8, reduce_range | 0.022 | 0.020 | 0.0107 | not exported |
+
+**Fix, in three layers.**
+1. uint8 weights: same behaviour on ARM and x86, best accuracy on real slices.
+2. A startup self-test in every pod: the bundle carries the *certified* INT8 logits on a
+   synthetic phantom; a pod that cannot reproduce them within 0.02 on its CPU serves the FP32
+   model shipped in the same bundle (`brainct_precision` metric, logged at WARNING).
+3. Certification across CPU families: after the fix, 60 real series through GKE matched the
+   certified predictions with mean |Δp| 0.0009 (max 0.027), study AUC 0.920 vs 0.922 offline.
+
+**Lesson.** Certify quantized models on the deployment CPU family, and make every replica
+prove it at startup; "same image" does not mean "same numerics".

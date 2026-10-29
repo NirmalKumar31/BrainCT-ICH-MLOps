@@ -1,6 +1,6 @@
 [project]
 name = "brainct"
-version = "0.2.0"
+version = "0.2.1"
 description = "Intracranial hemorrhage detection on head CT: 2.5D CNN + series sequence model, ONNX INT8 serving, drift monitoring, Kubernetes. Research use only."
 readme = "README.md"
 license = "MIT"
@@ -34,6 +34,9 @@ train = [
     "matplotlib>=3.9",
     "sqlalchemy>=2.1.6",
     "alembic>=1.20.1",
+]
+cloud = [
+    "modal>=1.6.3",
 ]
 
 [dependency-groups]

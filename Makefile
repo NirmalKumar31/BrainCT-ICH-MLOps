@@ -2,7 +2,7 @@
 # Deployed run; cnn25d_resnet18 is the 2.5D ablation.
 RUN      ?= cnn2d_resnet18
 RUN_DIR  := artifacts/runs/$(RUN)
-IMAGE    ?= brainct-api:0.2.0
+IMAGE    ?= brainct-api:0.2.1
 PY       := uv run python
 
 .PHONY: setup lint test data split train train-25d seq evaluate compare export benchmark \

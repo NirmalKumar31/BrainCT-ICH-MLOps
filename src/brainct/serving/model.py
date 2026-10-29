@@ -51,7 +51,11 @@ def contexts(volume: np.ndarray, context: int) -> np.ndarray:
 
 
 class InferenceModel:
-    def __init__(self, bundle: str | Path, threads: int = 0, verify: bool = True):
+    def __init__(
+        self, bundle: str | Path, threads: int = 0, verify: bool = True, precision: str = "auto"
+    ):
+        """precision: "auto" (INT8 unless the startup self-test fails here, then FP32),
+        "int8" or "fp32"."""
         self.dir = Path(bundle)
         card_path = self.dir / "model_card.json"
         if not card_path.exists():
@@ -69,6 +73,7 @@ class InferenceModel:
             opts.intra_op_num_threads = threads
             opts.inter_op_num_threads = 1
         providers = ["CPUExecutionProvider"]
+        self._opts, self._providers = opts, providers
         self.cnn = ort.InferenceSession(
             str(self.dir / files["cnn"]["path"]), opts, providers=providers
         )
@@ -84,6 +89,32 @@ class InferenceModel:
         self.context: int = contract["context"]
         self.image_size: int = contract["image_size"]
         self.batch: int = int(contract.get("batch", 16))
+        self.precision = "int8" if "cnn_fp32" in files else "bundle"
+        self.selftest: dict = {"status": "absent"}
+        if precision == "fp32" and "cnn_fp32" in files:
+            self._use_fp32()
+        elif precision == "auto" and "selftest" in files:
+            self.selftest = self.self_test()
+            if not self.selftest["passed"] and "cnn_fp32" in files:
+                self._use_fp32()
+
+    def _use_fp32(self) -> None:
+        path = self.dir / self.card["files"]["cnn_fp32"]["path"]
+        self.cnn = ort.InferenceSession(str(path), self._opts, providers=self._providers)
+        self.precision = "fp32"
+
+    def self_test(self) -> dict:
+        """Reproduce the certified INT8 logits on a synthetic phantom, on this CPU."""
+        with np.load(self.dir / self.card["files"]["selftest"]["path"]) as z:
+            vol, golden = z["volume"], z["certified_logits"]
+        x = contexts(vol, self.context)
+        parts = [
+            self.cnn.run(["logits"], {"hu": x[i : i + self.batch]})[0]
+            for i in range(0, len(x), self.batch)
+        ]
+        diff = float(np.abs(sigmoid(np.concatenate(parts)) - sigmoid(golden)).max())
+        limit = float(self.card.get("selftest", {}).get("max_prob_diff", 0.02))
+        return {"status": "run", "max_prob_diff": diff, "limit": limit, "passed": diff <= limit}
 
     # -------------------------------------------------------------- identity
     @property
@@ -111,13 +142,19 @@ class InferenceModel:
             if with_fmap:
                 fmaps.append(out[2])
         cnn_logits = np.concatenate(logits)
-        seq_logits = None
-        if with_seq and self.seq is not None:
-            emb = np.concatenate(embs)[None].astype(np.float32)
-            seq_logits = self.seq.run(["refined"], {"embedding": emb, "logits": cnn_logits[None]})[
-                0
-            ][0]
+        seq_logits = self.seq_forward(np.concatenate(embs), cnn_logits) if with_seq else None
         return RawOutput(cnn_logits, seq_logits, np.concatenate(fmaps) if with_fmap else None)
+
+    def cnn_forward(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """(logits, embedding) for prepared CNN input [N, 2C+1, H, W] (the micro-batcher's call)."""
+        out = self.cnn.run(["logits", "embedding"], {"hu": x.astype(np.float32, copy=False)})
+        return out[0], out[1]
+
+    def seq_forward(self, emb: np.ndarray, cnn_logits: np.ndarray) -> np.ndarray | None:
+        if self.seq is None:
+            return None
+        feeds = {"embedding": emb[None].astype(np.float32), "logits": cnn_logits[None]}
+        return self.seq.run(["refined"], feeds)[0][0]
 
     # -------------------------------------------------------------- calibrated outputs
     def calibrate(self, logits: np.ndarray, head: str) -> np.ndarray:

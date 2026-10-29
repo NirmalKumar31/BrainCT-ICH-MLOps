@@ -1,0 +1,26 @@
+{
+  "s8_full": {
+    "phantom": {
+      "max": 0.2482,
+      "mean": 0.03531
+    }
+  },
+  "s8_reduce_range": {
+    "phantom": {
+      "max": 0.1549,
+      "mean": 0.02365
+    }
+  },
+  "u8_full": {
+    "phantom": {
+      "max": 0.1441,
+      "mean": 0.02135
+    }
+  },
+  "u8_reduce_range": {
+    "phantom": {
+      "max": 0.1134,
+      "mean": 0.01995
+    }
+  }
+}

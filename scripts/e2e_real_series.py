@@ -33,6 +33,18 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("url")
     ap.add_argument("--series", type=int, default=60)
+    ap.add_argument(
+        "--tol",
+        type=float,
+        default=1e-3,
+        help="max |served - certified| probability; 1e-3 on the certifying CPU family, "
+        "~0.05 across families (ARM vs x86 INT8 kernels round differently)",
+    )
+    ap.add_argument(
+        "--feedback",
+        action="store_true",
+        help="post each series' true study labels to /v1/feedback (fills live-quality metrics)",
+    )
     args = ap.parse_args()
 
     card = json.loads((ROOT / "artifacts/bundle/model_card.json").read_text())
@@ -51,7 +63,7 @@ def main() -> None:
     picks += [neg[i] for i in rng.choice(len(neg), n, replace=False)]
 
     api_p, off_p, labels, ms = [], [], [], []
-    max_diff = 0.0
+    max_diff, diffs = 0.0, []
     for s in picks:
         vol = read_volume(s)
         uid = f"1.2.826.0.1.3680043.8.498.{abs(hash(s.series_id)) % 10**12}"
@@ -68,7 +80,13 @@ def main() -> None:
         body = r.json()
         a, b = offline["offsets"][index[s.series_id]], offline["offsets"][index[s.series_id] + 1]
         served = np.array([[sl["probabilities"][k] for k in LABELS] for sl in body["slices"]])
-        max_diff = max(max_diff, float(np.abs(served - p_off[a:b]).max()))
+        d = np.abs(served - p_off[a:b])
+        max_diff = max(max_diff, float(d.max()))
+        diffs.append(d.ravel())
+        if args.feedback:
+            truth = {k: int(s.labels[:, j].any()) for j, k in enumerate(LABELS)}
+            fb = {"request_id": r.headers["x-request-id"], "labels": truth}
+            requests.post(f"{args.url}/v1/feedback", json=fb, timeout=10).raise_for_status()
         api_p.append(body["study"]["probabilities"]["any"])
         off_p.append(float(p_off[a:b, 0].max()))
         labels.append(int(s.labels[:, 0].any()))
@@ -79,9 +97,11 @@ def main() -> None:
         "study_auc_api": roc_auc(y, np.array(api_p)),
         "study_auc_offline_same_series": roc_auc(y, np.array(off_p)),
         "max_abs_prob_diff_api_vs_offline": max_diff,
+        "mean_abs_prob_diff_api_vs_offline": float(np.concatenate(diffs).mean()),
+        "tolerance": args.tol,
         "latency_ms_p50": float(np.median(ms)), "latency_ms_p95": float(np.percentile(ms, 95)),
     }, indent=2))  # fmt: skip
-    assert max_diff < 1e-3, "serving path diverges from the certified evaluation"
+    assert max_diff < args.tol, "serving path diverges from the certified evaluation"
 
 
 if __name__ == "__main__":

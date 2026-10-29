@@ -1,0 +1,11 @@
+# Full RSNA (752,803 slices) on one cloud GPU (Modal A100). Single slice + series model.
+run_name: full_resnet50_2d
+backbone: resnet50
+pretrained: true
+context: 0
+epochs: 6
+batch_size: 128
+lr: 8.0e-4
+neg_ratio: 1.25
+context_dropout: 0.0
+num_workers: 14

@@ -1,0 +1,1 @@
+Destroy complete! Resources: 13 destroyed.

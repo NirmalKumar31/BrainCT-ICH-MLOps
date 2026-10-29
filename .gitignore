@@ -17,3 +17,6 @@ htmlcov/
 .DS_Store
 *.egg-info/
 .terraform/
+infra/terraform/terraform.tfvars
+infra/terraform/tfplan
+infra/terraform/*.tfstate*

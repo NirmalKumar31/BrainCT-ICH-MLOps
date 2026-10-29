@@ -1,0 +1,14 @@
+{
+  "not_dicom": {
+    "status": 422,
+    "body": {
+      "detail": "not a readable DICOM image: File is missing DICOM File Meta Information header or the 'DICM' prefix is missing from the header. Use force=True to force reading."
+    }
+  },
+  "empty": {
+    "status": 400,
+    "body": {
+      "detail": "empty upload"
+    }
+  }
+}

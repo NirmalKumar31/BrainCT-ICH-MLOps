@@ -1,0 +1,35 @@
+{
+  "window": 2000,
+  "features": {
+    "tissue_mean_hu": {
+      "count": 24,
+      "live_mean": 35.692604064941406,
+      "reference_mean": 23.60027287094484,
+      "psi": null
+    },
+    "air_fraction": {
+      "count": 24,
+      "live_mean": 0.49176897321428575,
+      "reference_mean": 0.6040762509344589,
+      "psi": null
+    },
+    "brain_fraction": {
+      "count": 24,
+      "live_mean": 0.4025281010841837,
+      "reference_mean": 0.17143249580461323,
+      "psi": null
+    },
+    "bone_fraction": {
+      "count": 24,
+      "live_mean": 0.09630600286989797,
+      "reference_mean": 0.06176266715554185,
+      "psi": null
+    },
+    "p_any": {
+      "count": 24,
+      "live_mean": 0.154395773075521,
+      "reference_mean": 0.14789133738601823,
+      "psi": null
+    }
+  }
+}
