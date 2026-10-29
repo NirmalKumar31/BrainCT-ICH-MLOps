@@ -66,27 +66,48 @@ def contexts(volume: torch.Tensor, context: int) -> torch.Tensor:
 
 
 @torch.no_grad()
-def infer(model: SliceNet, series: list[Series], dev, chunk: int = 64):
+def infer(model: SliceNet, series: list[Series], dev, chunk: int | None = None):
     """Per-series logits and embeddings, no augmentation.
 
-    In-process loading: a 4 MB series read takes ~2 ms, and spawning workers (macOS) cost more
-    than it saved (39 vs 105 slices/s measured on 40 series).
+    Slices from consecutive series are streamed through fixed-size batches (the last one
+    padded): one input shape keeps cuDNN autotuning to a single run (a new shape per series
+    length cost ~10x on an A100) and keeps the GPU full. Volumes are prefetched by workers on
+    CUDA; on macOS spawning workers cost more than it saved (39 vs 105 slices/s).
     """
     model.eval()
-    loader = DataLoader(VolumeDataset(series), batch_size=None, num_workers=0)
-    logits, embs = [], []
+    cuda = dev.type == "cuda"
+    chunk = chunk or (256 if cuda else 64)
+    fmt = torch.channels_last if cuda else torch.contiguous_format
+    loader = DataLoader(
+        VolumeDataset(series), batch_size=None, num_workers=6 if cuda else 0, pin_memory=cuda
+    )
     dtype = amp_dtype(dev)
+    out_l: list[torch.Tensor] = []
+    out_e: list[torch.Tensor] = []
+
+    def run(x: torch.Tensor) -> None:
+        n = len(x)
+        if n < chunk:
+            x = torch.cat([x, x[:1].expand(chunk - n, *x.shape[1:])])
+        with torch.autocast(dev.type, dtype=dtype, enabled=dtype is not None):
+            lg, emb, _ = model.forward_all(x.contiguous(memory_format=fmt))
+        out_l.append(lg[:n].float().cpu())
+        out_e.append(emb[:n].float().cpu())
+
+    buf: torch.Tensor | None = None
     for vol in loader:
-        x = contexts(vol.to(dev), model.context)
-        out_l, out_e = [], []
-        for i in range(0, len(x), chunk):
-            with torch.autocast(dev.type, dtype=dtype, enabled=dtype is not None):
-                lg, emb, _ = model.forward_all(x[i : i + chunk])
-            out_l.append(lg.float().cpu())
-            out_e.append(emb.float().cpu())
-        logits.append(torch.cat(out_l).numpy())
-        embs.append(torch.cat(out_e).numpy())
-    return logits, embs
+        x = contexts(vol.to(dev, non_blocking=True), model.context)
+        buf = x if buf is None else torch.cat([buf, x])
+        while len(buf) >= chunk:
+            run(buf[:chunk])
+            buf = buf[chunk:]
+    if buf is not None and len(buf):
+        run(buf)
+    bounds = np.cumsum([s.length for s in series])[:-1]
+    return (
+        np.split(torch.cat(out_l).numpy(), bounds),
+        np.split(torch.cat(out_e).numpy(), bounds),
+    )
 
 
 def evaluate(logits: list[np.ndarray], series: list[Series]) -> dict[str, float]:
@@ -138,7 +159,7 @@ def main(argv: list[str] | None = None) -> None:
     model = SliceNet(cfg.backbone, cfg.context, pretrained=cfg.pretrained).to(dev)
     # NHWC is ~1.3-1.5x faster for convnets on tensor cores; it was slower on Apple MPS.
     memory_format = torch.channels_last if cuda else torch.contiguous_format
-    model = model.to(memory_format=memory_format)
+    model.backbone.to(memory_format=memory_format)  # conv weights only; the head is 2D
     net = model  # unwrapped: evaluation, inference, checkpoints
     opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
     dtype = amp_dtype(dev)

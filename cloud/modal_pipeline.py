@@ -38,8 +38,21 @@ data_vol = modal.Volume.from_name("brainct-data", create_if_missing=True, versio
 runs_vol = modal.Volume.from_name("brainct-runs", create_if_missing=True, version=2)
 app = modal.App("brainct", image=image)
 
-DATA, RUNS, LOCAL = Path("/data/rsna"), Path("/runs"), Path("/local/rsna")
-MLFLOW = f"sqlite:///{RUNS}/mlflow.db"
+RUNS, LOCAL_ROOT = Path("/runs"), Path("/local")
+# SQLite must not live on a network volume (locking): work on a local copy, sync it back.
+MLFLOW_LOCAL = Path("/local/mlflow.db")
+MLFLOW = f"sqlite:///{MLFLOW_LOCAL}"
+
+
+def mlflow_pull() -> None:
+    MLFLOW_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+    if (RUNS / "mlflow.db").exists():
+        shutil.copyfile(RUNS / "mlflow.db", MLFLOW_LOCAL)
+
+
+def mlflow_push() -> None:
+    if MLFLOW_LOCAL.exists():
+        shutil.copyfile(MLFLOW_LOCAL, RUNS / "mlflow.db")
 
 
 def sh(*args: str, env: dict | None = None) -> None:
@@ -48,44 +61,52 @@ def sh(*args: str, env: dict | None = None) -> None:
 
 
 @app.function(cpu=16, memory=32768, timeout=3 * 3600, volumes={"/data": data_vol})
-def ingest(regions: int = 32, gib_per_region: float = 4.3) -> None:
+def ingest(dataset: str = "rsna", regions: int = 32, gib_per_region: float = 4.3) -> None:
     """Whole tar (32 x 4.3 GiB > 144 GB): every series kept by exactly one region."""
+    data = Path("/data") / dataset
     sh(
         sys.executable,
         "-m",
         "brainct.data.ingest",
         "--out",
-        str(DATA),
+        str(data),
         "--regions",
         str(regions),
         "--gib-per-region",
         str(gib_per_region),
     )
-    sh(sys.executable, "-m", "brainct.data.split", "--data", str(DATA))
+    sh(sys.executable, "-m", "brainct.data.split", "--data", str(data))
     data_vol.commit()
 
 
-def stage_local() -> Path:
-    """Copy the cache to local disk (once per container)."""
-    if not (LOCAL / "slices.csv").exists():
+def stage_local(dataset: str) -> Path:
+    """Copy the cache from the volume to local NVMe (once per container), 32 files at a time."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    src, dst = Path("/data") / dataset, LOCAL_ROOT / dataset
+    if not (dst / "slices.csv").exists():
         t0 = time.time()
-        LOCAL.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(DATA, LOCAL, dirs_exist_ok=True)
-        print(f"staged cache to local disk in {time.time() - t0:.0f} s", flush=True)
-    return LOCAL
+        (dst / "series").mkdir(parents=True, exist_ok=True)
+        files = list((src / "series").glob("*.npy"))
+        with ThreadPoolExecutor(32) as pool:
+            list(pool.map(lambda f: shutil.copyfile(f, dst / "series" / f.name), files))
+        for name in ("slices.csv", "splits.csv", "manifest.json"):
+            shutil.copyfile(src / name, dst / name)
+        print(f"staged {len(files)} series to local disk in {time.time() - t0:.0f} s", flush=True)
+    return dst
 
 
 @app.function(
     gpu=GPU,
     cpu=16,
     memory=65536,
-    ephemeral_disk=200 * 1024,
+    ephemeral_disk=512 * 1024,
     timeout=10 * 3600,
     retries=2,
     volumes={"/data": data_vol, "/runs": runs_vol},
 )
-def train(config: str = "full_resnet50_2d", overrides: str = "") -> None:
-    local = stage_local()
+def train(config: str = "full_resnet50_2d", dataset: str = "rsna", overrides: str = "") -> None:
+    local = stage_local(dataset)
     sh("nvidia-smi")
     sets = [f"data_dir={local}", f"out_dir={RUNS}", *overrides.split()]
 
@@ -96,8 +117,10 @@ def train(config: str = "full_resnet50_2d", overrides: str = "") -> None:
 
     def committer() -> None:
         while not stop.wait(300):
+            mlflow_push()
             runs_vol.commit()
 
+    mlflow_pull()
     threading.Thread(target=committer, daemon=True).start()
     try:
         sh(
@@ -112,26 +135,39 @@ def train(config: str = "full_resnet50_2d", overrides: str = "") -> None:
         )
     finally:
         stop.set()
+        mlflow_push()
         runs_vol.commit()
 
 
 @app.function(
     cpu=32,
-    memory=131072,
-    ephemeral_disk=200 * 1024,
+    memory=65536,
+    ephemeral_disk=512 * 1024,
     timeout=6 * 3600,
     volumes={"/data": data_vol, "/runs": runs_vol},
 )
-def finish(config: str = "full_resnet50_2d") -> None:
-    """Series model, 2-model evaluation, ONNX/INT8 export + certification, benchmark."""
-    local = stage_local()
-    run = RUNS / config
+def finish(
+    config: str = "full_resnet50_2d",
+    dataset: str = "rsna",
+    export: bool = True,
+    overrides: str = "",
+) -> None:
+    """Series model and CNN-vs-series evaluation; with export, ONNX/INT8 + certification."""
+    local = stage_local(dataset)
+    sets = [f"data_dir={local}", f"out_dir={RUNS}", *overrides.split()]
+    from brainct.training.config import TrainConfig
+
+    run = TrainConfig.load(f"/app/configs/{config}.yaml", sets).run_dir()
     env = {"MLFLOW_TRACKING_URI": MLFLOW}
-    sets = [f"data_dir={local}", f"out_dir={RUNS}"]
     cfg = f"/app/configs/{config}.yaml"
+    mlflow_pull()
     sh(sys.executable, "-m", "brainct.training.train_seq", "--config", cfg, "--set", *sets, env=env)
+    mlflow_push()
     runs_vol.commit()
     sh(sys.executable, "-m", "brainct.evaluation", "--compare", f"{run}:cnn", f"{run}:seq")
+    runs_vol.commit()
+    if not export:
+        return
     sh(
         sys.executable,
         "-m",
