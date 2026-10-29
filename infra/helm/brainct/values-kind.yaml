@@ -1,0 +1,8 @@
+# Local kind / Docker Desktop cluster: image loaded with `kind load docker-image`.
+image:
+  pullPolicy: Never
+resources:
+  requests: { cpu: 500m, memory: 512Mi }
+  limits: { cpu: "2", memory: 1536Mi }
+autoscaling:
+  maxReplicas: 3

@@ -1,0 +1,88 @@
+[project]
+name = "brainct"
+version = "0.2.0"
+description = "Intracranial hemorrhage detection on head CT: 2.5D CNN + series sequence model, ONNX INT8 serving, drift monitoring, Kubernetes. Research use only."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12,<3.13"
+authors = [{ name = "Nirmal Kumar" }]
+# Core: what both training and serving need (preprocessing is shared, byte for byte).
+dependencies = [
+    "numpy>=1.26,<3",
+    "opencv-python-headless>=4.10",
+    "pydicom>=3.0",
+    "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+serve = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "onnxruntime>=1.19",
+    "prometheus-client>=0.20",
+]
+train = [
+    "torch>=2.5",
+    "timm>=1.0",
+    "pandas>=2.2",
+    "scikit-learn>=1.5",
+    "mlflow-skinny>=2.16",
+    "onnx>=1.16",
+    "pyyaml>=6.0",
+    "requests>=2.32",
+    "matplotlib>=3.9",
+    "sqlalchemy>=2.1.6",
+    "alembic>=1.20.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-cov>=5.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "requests>=2.34.2",
+    "onnx>=1.23.2",
+]
+loadtest = ["locust>=2.31"]
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "NPY", "PT"]
+ignore = ["RUF001", "RUF002", "RUF003", "PT018", "PT011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: needs real data or a trained model; skipped when they are absent",
+]
+
+[tool.coverage.run]
+source = ["brainct"]
+omit = [
+    "*/brainct/training/*",  # PyTorch: tested where torch is installed, not in CI
+    "*/brainct/optimization/*",
+    "*/brainct/serving/__main__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+warn_unused_ignores = true
+check_untyped_defs = true
+files = ["src/brainct"]
+exclude = ["src/brainct/training/"]

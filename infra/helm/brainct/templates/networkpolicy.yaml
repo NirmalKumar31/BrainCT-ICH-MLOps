@@ -1,0 +1,22 @@
+{{- if .Values.networkPolicy.enabled }}
+# Ingress only on the API port, from this namespace and the allowed ones; no egress at all
+# (the service needs no network: the model is baked into the image).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "brainct.fullname" . }}
+  labels: {{- include "brainct.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels: {{- include "brainct.selector" . | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports: [{ port: 8000 }]
+      from:
+        - podSelector: {}
+        {{- range .Values.networkPolicy.allowNamespaces }}
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: {{ . }} }
+        {{- end }}
+  egress: []
+{{- end }}

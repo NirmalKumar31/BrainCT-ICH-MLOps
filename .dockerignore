@@ -1,0 +1,8 @@
+# Only src/, serving/requirements.txt and the selected bundle enter the build context.
+*
+!src/brainct/**
+!serving/requirements.txt
+!artifacts/bundle/**
+!artifacts/standin/**
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,42 @@
+image:
+  repository: brainct-api
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# One uvicorn process per pod; ONNX Runtime threads = CPU limit, so scale out, not up.
+resources:
+  requests: { cpu: "1", memory: 768Mi }
+  limits: { cpu: "2", memory: 1536Mi }
+
+env:
+  BRAINCT_THREADS: "2"
+  BRAINCT_MAX_CONCURRENCY: "1"
+  BRAINCT_MAX_SLICES: "256"
+  BRAINCT_DRIFT_WINDOW: "2000"
+  BRAINCT_LOG_LEVEL: INFO
+
+service:
+  type: ClusterIP
+  port: 80
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 60
+  # Scale down slowly: a series request is seconds of CPU, so load arrives in bursts.
+  scaleDownStabilizationSeconds: 120
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  # Namespaces allowed to reach the API besides its own (the monitoring namespace scrapes it).
+  allowNamespaces: [brainct-monitoring]
+
+prometheus:
+  scrape: true

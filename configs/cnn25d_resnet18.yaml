@@ -1,0 +1,10 @@
+# 2.5D model: slices (i-1, i, i+1) x (brain, subdural, bone) windows = 9 input channels.
+run_name: cnn25d_resnet18
+backbone: resnet18
+pretrained: true
+context: 1
+epochs: 5
+batch_size: 48
+lr: 6.0e-4
+neg_ratio: 1.25
+context_dropout: 0.1

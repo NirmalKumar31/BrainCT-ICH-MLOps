@@ -1,0 +1,31 @@
+groups:
+  - name: brainct
+    rules:
+      - alert: BrainCTInputDrift
+        # PSI > 0.2 is the conventional "significant shift"; needs a full window to be set.
+        expr: max by (feature) (brainct_drift_psi) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Input/prediction drift on {{ $labels.feature }} (PSI {{ $value | printf \"%.2f\" }})"
+          description: "Live distribution differs from training. Check scanner/protocol, rescale tags, or case mix before trusting outputs."
+      - alert: BrainCTHighLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(brainct_request_latency_seconds_bucket{endpoint="/v1/predict/series"}[5m]))) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Series p95 latency above 5 s"
+      - alert: BrainCTErrors
+        expr: |
+          sum(rate(brainct_requests_total{endpoint=~"/v1/predict.*",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(brainct_requests_total{endpoint=~"/v1/predict.*"}[5m])), 1e-9) > 0.02
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 2% of prediction requests fail with 5xx"
+      - alert: BrainCTModelNotLoaded
+        expr: min(brainct_model_loaded) < 1
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "A pod is running without a loaded model (bundle missing or checksum mismatch)"

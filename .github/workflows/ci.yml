@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: lint · types · tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      # No PyTorch here (multi-GB wheels): training tests skip, everything the service runs
+      # is tested. `onnx` is needed by the stand-in bundle builder.
+      - name: Install (serve extra + dev, from uv.lock)
+        run: uv sync --locked --extra serve --group dev && uv pip install onnx==1.21.0
+      - name: Lint
+        run: uv run ruff check .
+      - name: Format
+        run: uv run ruff format --check .
+      - name: Types
+        run: uv run mypy
+      - name: Serving requirements match uv.lock
+        run: |
+          uv export --frozen --no-dev --extra serve --no-emit-project --no-hashes -o /tmp/req.txt
+          diff -u serving/requirements.txt /tmp/req.txt
+      - name: Tests + coverage gate
+        run: uv run pytest --cov --cov-report=term --cov-report=xml --cov-fail-under=85
+      - uses: actions/upload-artifact@v4
+        with: { name: coverage-xml, path: coverage.xml }
+
+  image:
+    name: image · scan · smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Stand-in bundle (the trained model is not distributed)
+        run: pip install numpy onnx && python scripts/make_standin_bundle.py artifacts/standin
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: serving/Dockerfile
+          load: true
+          tags: brainct-api:ci
+          build-args: |
+            BUNDLE=artifacts/standin
+            GIT_SHA=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Vulnerability scan (fail on fixable critical)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: brainct-api:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Image has no PyTorch and runs as non-root
+        run: |
+          docker run --rm --entrypoint python brainct-api:ci -c "import importlib.util as u, os; assert u.find_spec('torch') is None; assert os.getuid() == 10001"
+          docker image inspect brainct-api:ci --format 'size={{.Size}}'
+      - name: Container smoke test (read-only root fs, like the Helm chart)
+        run: |
+          docker run -d --name api --read-only --tmpfs /tmp -p 8000:8000 brainct-api:ci
+          pip install pydicom requests
+          python scripts/smoke_test.py http://127.0.0.1:8000 --wait 60
+      - if: failure()
+        run: docker logs api
+
+  k8s:
+    name: kind · helm · e2e
+    runs-on: ubuntu-latest
+    needs: image
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install numpy onnx pydicom requests && python scripts/make_standin_bundle.py artifacts/standin
+      - name: Build image
+        run: docker build -f serving/Dockerfile --build-arg BUNDLE=artifacts/standin -t brainct-api:0.2.0 .
+      - uses: helm/kind-action@v1
+        with: { cluster_name: brainct }
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint infra/helm/brainct -f infra/helm/brainct/values-kind.yaml
+      - name: Deploy
+        run: |
+          kind load docker-image brainct-api:0.2.0 --name brainct
+          helm install brainct infra/helm/brainct -f infra/helm/brainct/values-kind.yaml --wait --timeout 5m
+          kubectl get pods,svc,hpa,pdb -o wide
+      - name: End-to-end through the Service
+        run: |
+          kubectl port-forward svc/brainct-brainct 8080:80 &
+          python scripts/smoke_test.py http://127.0.0.1:8080 --wait 60
+      - name: Rolling restart keeps serving (maxUnavailable 0 + readiness)
+        run: |
+          kubectl rollout restart deploy/brainct-brainct
+          kubectl rollout status deploy/brainct-brainct --timeout 3m
+      - name: Monitoring manifests apply
+        run: |
+          kubectl apply -k monitoring
+          kubectl -n brainct-monitoring rollout status deploy/prometheus --timeout 3m
+      - if: failure()
+        run: kubectl describe pods; kubectl logs -l app.kubernetes.io/name=brainct --tail 100

@@ -1,0 +1,19 @@
+# data, models and experiment tracking are never committed (RSNA terms; size)
+data/
+artifacts/
+mlruns/
+logs/
+load_tests/results/
+
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.DS_Store
+*.egg-info/
+.terraform/
