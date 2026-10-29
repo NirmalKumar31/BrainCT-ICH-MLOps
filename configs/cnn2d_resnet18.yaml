@@ -1,5 +1,5 @@
-# Ablation baseline matching the reference project's input: one slice, 3 windows.
-# Same backbone, schedule and sampling as the 2.5D run, so the difference is the context.
+# Deployed model. One slice, 3 windows (the reference project's input); context across slices
+# comes from the series model. Same recipe as the 2.5D ablation, so only the input differs.
 run_name: cnn2d_resnet18
 backbone: resnet18
 pretrained: true

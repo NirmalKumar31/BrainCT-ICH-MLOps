@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: brainct-load
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: brainct-api:0.2.0
+          imagePullPolicy: Never
+          command: ["python", "/load/incluster.py"]
+          env:
+            - { name: STEPS, value: "1,2,4,6,8" }
+            - { name: STEP_SECONDS, value: "60" }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi }
+          volumeMounts: [{ name: load, mountPath: /load }]
+      volumes:
+        - name: load
+          configMap: { name: brainct-load }

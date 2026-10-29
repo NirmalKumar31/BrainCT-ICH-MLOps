@@ -1,10 +1,11 @@
 # End-to-end pipeline. Each target is one stage; outputs are files, so stages can be rerun alone.
-RUN      ?= cnn25d_resnet18
+# Deployed run; cnn25d_resnet18 is the 2.5D ablation.
+RUN      ?= cnn2d_resnet18
 RUN_DIR  := artifacts/runs/$(RUN)
 IMAGE    ?= brainct-api:0.2.0
 PY       := uv run python
 
-.PHONY: setup lint test data split train train-baseline seq evaluate compare export benchmark \
+.PHONY: setup lint test data split train train-25d seq evaluate compare export benchmark \
         standin image serve smoke kind-up deploy monitoring loadtest kind-down
 
 setup:            ## install everything (training + serving + dev)
@@ -23,18 +24,20 @@ data:             ## stream ~2,000 RSNA series from Hugging Face into the HU cac
 split:
 	$(PY) -m brainct.data.split --data data/rsna
 
-train:            ## 2.5D CNN (MPS/CUDA/CPU), then logits+embeddings for every split
+train:            ## CNN (MPS/CUDA/CPU), then logits+embeddings for every split
 	$(PY) -m brainct.training.train_cnn --config configs/$(RUN).yaml
 
-train-baseline:   ## single-slice ablation (the reference project's input)
-	$(PY) -m brainct.training.train_cnn --config configs/cnn2d_resnet18.yaml
+train-25d:        ## 2.5D ablation (slices i-1, i, i+1)
+	$(PY) -m brainct.training.train_cnn --config configs/cnn25d_resnet18.yaml
+	$(PY) -m brainct.training.train_seq --config configs/cnn25d_resnet18.yaml
 
 seq:              ## series BiGRU over stage-1 embeddings
 	$(PY) -m brainct.training.train_seq --config configs/$(RUN).yaml
 
-compare:          ## ablation table: 2D CNN vs 2.5D CNN vs 2.5D + series model (PyTorch)
+compare:          ## 2x2 ablation: (single slice | 2.5D) x (CNN | CNN + series model)
 	$(PY) -m brainct.evaluation --compare artifacts/runs/cnn2d_resnet18:cnn \
-	    $(RUN_DIR):cnn $(RUN_DIR):seq
+	    artifacts/runs/cnn2d_resnet18:seq artifacts/runs/cnn25d_resnet18:cnn \
+	    artifacts/runs/cnn25d_resnet18:seq
 
 export:           ## ONNX + INT8 + certification of the deployed chain -> artifacts/bundle
 	$(PY) -m brainct.optimization.export --run $(RUN_DIR) --out artifacts/bundle

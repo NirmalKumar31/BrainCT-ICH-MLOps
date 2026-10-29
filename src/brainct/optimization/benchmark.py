@@ -60,7 +60,8 @@ def main(argv: list[str] | None = None) -> None:
     k = 2 * net.context + 1
     rng = np.random.default_rng(0)
     vol = rng.integers(-1000, 1500, (32, IMAGE_SIZE, IMAGE_SIZE)).astype(np.float32)
-    x1 = contexts(vol, net.context)[:1]
+    xs = contexts(vol, net.context)
+    x1 = xs[:1]
     seq = session(args.work / "seq.onnx", args.threads)
 
     results: dict[str, dict] = {}
@@ -68,7 +69,7 @@ def main(argv: list[str] | None = None) -> None:
         results["pytorch_fp32"] = {
             "slice": timed(lambda: net(torch.from_numpy(x1)), 3, args.reps),
             "series_cnn_only": timed(
-                lambda: [net(torch.from_numpy(contexts(vol, 1)[i : i + 16])) for i in (0, 16)],
+                lambda: [net(torch.from_numpy(xs[i : i + 16])) for i in (0, 16)],
                 2, max(5, args.reps // 3),
             ),
         }  # fmt: skip
@@ -76,7 +77,7 @@ def main(argv: list[str] | None = None) -> None:
         cnn = session(args.work / f"cnn.{precision}.onnx", args.threads)
 
         def chain(cnn=cnn):
-            x = contexts(vol, 1)
+            x = contexts(vol, net.context)
             outs = [cnn.run(["logits", "embedding"], {"hu": x[i : i + 16]}) for i in (0, 16)]
             lg = np.concatenate([o[0] for o in outs])[None]
             emb = np.concatenate([o[1] for o in outs])[None]

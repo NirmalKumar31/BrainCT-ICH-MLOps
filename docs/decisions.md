@@ -27,10 +27,17 @@ Result: 24 / 6 / 5 epidural patients in train / val / test.
 
 ## Model
 
-**2.5D input (slices i-1, i, i+1 × brain/subdural/bone windows = 9 channels).** The reference
-project classified each slice alone and named that its main limitation (thin subdural and
-diffuse subarachnoid bleeds are easier to see across slices). Neighbouring slices cost only
-the first convolution. The single-slice model is trained with the same recipe as an ablation.
+**Tested 2.5D input; deployed single-slice CNN + series model.** The reference project
+classified each slice alone and named that its main limitation (thin subdural and diffuse
+subarachnoid bleeds are easier to see across slices). Two ways to add context were trained with
+the same recipe and compared on the held-out test set (2×2 ablation, `docs/results.md`):
+(a) 2.5D input, slices i-1, i, i+1 × 3 windows = 9 channels; (b) a series model over per-slice
+embeddings. (b) improved macro AUC by ~0.018 for both CNNs; (a) did not help at this data
+scale (0.897 vs 0.902 for the CNN alone, 0.915 vs 0.920 with the series model, CIs fully
+overlapping). The series model already sees every slice, so the 2.5D channels were redundant.
+The deployed bundle is therefore the single-slice CNN + series model: the better point
+estimate and a simpler input contract. The code supports both (`context` in the config and
+the model card); with the full 750k-slice dataset the 2.5D result may differ.
 
 **Windowing inside the network graph.** The ONNX model takes HU; the window/clamp/normalise
 ops are part of the graph. The service cannot window differently from training, and the
@@ -53,7 +60,7 @@ Platt scaling is fit on validation (of the *deployed* INT8 chain) and frozen; mo
 uses validation mean AUC, which the prior shift does not affect.
 
 **ResNet-18 at 224 px, fp16 autocast on Apple MPS.** Measured on the M4: ~37 img/s sustained
-training (9 channels), the fastest of ResNet-18/34, EfficientNet-B0 and ConvNeXt-nano;
+training (9-channel 2.5D input; ~40 img/s for 3 channels), the fastest of ResNet-18/34, EfficientNet-B0 and ConvNeXt-nano;
 bf16 was slower than fp16 on MPS. channels_last was slower.
 
 ## Evaluation
@@ -71,8 +78,9 @@ bf16 was slower than fp16 on MPS. channels_last was slower.
 - **Series endpoint first.** A study is a series, and the series model needs all slices.
   Slices are ordered by position along the slice normal (`ImagePositionPatient` ·
   orientation normal), then `InstanceNumber`, then upload order, with warnings. Mixed series
-  are rejected. The single-slice endpoint remains (CNN head, neighbours = the slice itself);
-  training used context dropout (p=0.1) so this degraded mode stays usable.
+  are rejected. The single-slice endpoint remains (CNN head only, no series context, calibrated
+  separately on validation); with a 2.5D bundle the neighbours are the slice itself, which
+  training covered with context dropout (p=0.1).
 - **No PyTorch in the image**; ONNX Runtime + numpy + OpenCV. Non-root, read-only root FS.
 - **Bundle integrity:** the model card lists SHA-256 of every file; a mismatch keeps the pod
   un-ready (503 on `/ready`) instead of serving a wrong model.
