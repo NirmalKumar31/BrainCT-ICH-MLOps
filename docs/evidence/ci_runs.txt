@@ -1,4 +1,13 @@
-completed	success	Results: 2x2 ablation, certified INT8 bundle, benchmarks, Kubernetes …	CI	main	push	40949800365	5m12s	2026-10-29T20:31:33Z
-completed	success	CI: compare exported requirements in place; regression gates for the …	CI	main	push	40933314785	4m7s	2026-10-29T18:42:20Z
-completed	failure	Commit the data package; anchor ignore patterns to the repo root	CI	main	push	40932410827	5m2s	2026-10-29T18:36:31Z
-completed	failure	Pipeline, service, tests and deployment for 2.5D + series ICH detection	CI	main	push	40932205638	14s	2026-10-29T18:35:12Z
+# gh run list --workflow ci.yml (main), 2026-10-30T03:05Z
+40994523937  8e48654  success  2026-10-30T02:56:13Z  Fix every finding of the audit; re-certify the deployed bundle
+40989106891  1b11d01  success  2026-10-30T02:00:10Z  Full-data results: ResNet-50 + series model on all of RSNA (Modal A100)
+40973179155  706c823  success  2026-10-29T23:26:39Z  Modal pipeline: smoke-tested ingest, A100 training and x86 export
+40966805778  b2748c6  success  2026-10-29T22:33:45Z  Cloud deployment, monitoring, multi-GPU training, and proof of all of it
+40949800365  093561f  success  2026-10-29T20:31:33Z  Results: 2x2 ablation, certified INT8 bundle, benchmarks, Kubernetes …
+40933314785  6f306f9  success  2026-10-29T18:42:20Z  CI: compare exported requirements in place; regression gates for the …
+
+# jobs of 40994523937
+lint · types · tests: success
+image · scan · smoke: success
+terraform fmt · validate · lint: success
+kind · helm · e2e: success
