@@ -29,27 +29,97 @@
     "input": "HU, int16-rounded, padded square + area-resized",
     "batch": 16
   },
+  "calibration": {
+    "cnn": {
+      "any": [
+        1.0144427661356845,
+        -1.5532359544305108
+      ],
+      "epidural": [
+        0.9354135094844683,
+        -0.37460706244671466
+      ],
+      "intraparenchymal": [
+        1.13288891255726,
+        0.010442134396569479
+      ],
+      "intraventricular": [
+        1.025447184666793,
+        -1.3426234144089824
+      ],
+      "subarachnoid": [
+        1.0672896781016297,
+        -0.7393873150892099
+      ],
+      "subdural": [
+        0.9177712759076108,
+        -1.1103624567924595
+      ]
+    },
+    "seq": {
+      "any": [
+        0.8735565859342381,
+        0.1605340406807794
+      ],
+      "epidural": [
+        0.8509088266176296,
+        -0.003706318557188336
+      ],
+      "intraparenchymal": [
+        0.8340745143916868,
+        0.24655597815286032
+      ],
+      "intraventricular": [
+        0.8986879422028402,
+        0.2552921662698453
+      ],
+      "subarachnoid": [
+        0.8200740330367089,
+        -0.31484888521881427
+      ],
+      "subdural": [
+        0.8119520541169916,
+        -0.1890858225166901
+      ]
+    }
+  },
   "thresholds": {
     "cnn": {
-      "any": 0.43962128437808495,
+      "any": 0.4396212843780848,
       "epidural": 0.18645831790731401,
       "intraparenchymal": 0.3419064187656411,
       "intraventricular": 0.3776349909059572,
-      "subarachnoid": 0.2708963179453903,
-      "subdural": 0.3128124080699036,
-      "screening_any": 0.06751562053242967,
-      "study_any": 0.6962615192251194
+      "subarachnoid": 0.2708963179453907,
+      "subdural": 0.31281240806992133,
+      "screening_any": 0.06751562053243058,
+      "study_any": 0.6962615192251177,
+      "study_epidural": 0.40742826369365237,
+      "study_intraparenchymal": 0.6627770423192364,
+      "study_intraventricular": 0.720226738985514,
+      "study_subarachnoid": 0.5344543960934961,
+      "study_subdural": 0.5456408013962041,
+      "study_screening_any": 0.46914938387414706
     },
     "seq": {
       "any": 0.43981177169524444,
-      "epidural": 0.12189001099466412,
+      "epidural": 0.12189001099466415,
       "intraparenchymal": 0.4143260661321972,
-      "intraventricular": 0.41248088705442687,
+      "intraventricular": 0.4124808870544271,
       "subarachnoid": 0.3489559300998332,
-      "subdural": 0.34684464232119816,
+      "subdural": 0.34684464232119977,
       "screening_any": 0.11342100911859447,
-      "study_any": 0.3251412439993259
+      "study_any": 0.3251412439993259,
+      "study_epidural": 0.21259671282561682,
+      "study_intraparenchymal": 0.4396636813237413,
+      "study_intraventricular": 0.5669684695997296,
+      "study_subarachnoid": 0.23695346803158537,
+      "study_subdural": 0.29046739381887854,
+      "study_screening_any": 0.1511681508394972
     }
+  },
+  "selftest": {
+    "max_prob_diff": 0.02,
+    "int8_vs_fp32_on_build_machine": 0.0650770515203476
   },
   "metrics_test": {
     "fp32": {
@@ -59,7 +129,12 @@
           0.9693367103619959,
           0.9753971181660945
         ],
-        "weighted_log_loss": 0.07821199507609822,
+        "auc_macro_subtypes": 0.9718999183116356,
+        "auc_macro_subtypes_ci": [
+          0.9682970161088776,
+          0.9749878059099689
+        ],
+        "weighted_log_loss": 0.07821199507609886,
         "study_any_auc": 0.9767973504397991,
         "auc": {
           "any": 0.9757897048930589,
@@ -75,6 +150,11 @@
         "auc_macro_ci": [
           0.9792105189662621,
           0.9844351568469806
+        ],
+        "auc_macro_subtypes": 0.9815692366417436,
+        "auc_macro_subtypes_ci": [
+          0.9783377598432592,
+          0.9842847620156553
         ],
         "weighted_log_loss": 0.0654583760900602,
         "study_any_auc": 0.9794297334608297,
@@ -95,7 +175,12 @@
           0.9673464786140802,
           0.9739244676339718
         ],
-        "weighted_log_loss": 0.08013770281259769,
+        "auc_macro_subtypes": 0.9699944533599408,
+        "auc_macro_subtypes_ci": [
+          0.9660517239056614,
+          0.9733820928305029
+        ],
+        "weighted_log_loss": 0.08013770281259762,
         "study_any_auc": 0.974826328421346,
         "auc": {
           "any": 0.9750828346736239,
@@ -111,6 +196,11 @@
         "auc_macro_ci": [
           0.9779966208462898,
           0.983803713504838
+        ],
+        "auc_macro_subtypes": 0.9806738764232772,
+        "auc_macro_subtypes_ci": [
+          0.9770281856224001,
+          0.9835901008503176
         ],
         "weighted_log_loss": 0.06628134873086852,
         "study_any_auc": 0.9778711220735469,
@@ -130,14 +220,184 @@
       "patients": 2841
     }
   },
-  "intended_use": "Research and engineering demonstration only. Not a medical device; not validated for clinical use. Trained on 21,744 series of RSNA 2019 (single source).",
-  "precision": "int8",
-  "selftest": {
-    "status": "run",
-    "max_prob_diff": 0.0022108373073558563,
-    "limit": 0.02,
-    "passed": true
+  "provenance": {
+    "created": "2026-10-30T01:44:37+00:00",
+    "git_sha": "706c8230df6e442e3632160dfb7622be3a32bb2d",
+    "train_config": {
+      "run_name": "full_resnet50_2d",
+      "data_dir": "/local/rsna",
+      "out_dir": "/runs",
+      "backbone": "resnet50",
+      "pretrained": true,
+      "context": 0,
+      "epochs": 6,
+      "batch_size": 128,
+      "lr": 0.0008,
+      "weight_decay": 0.0001,
+      "warmup_frac": 0.05,
+      "neg_ratio": 1.25,
+      "context_dropout": 0.0,
+      "num_workers": 14,
+      "seed": 2026,
+      "max_train_items": null,
+      "max_val_series": null,
+      "seq_epochs": 40,
+      "seq_lr": 0.001,
+      "seq_hidden": 128,
+      "seq_feature_noise": 0.5
+    },
+    "best_epoch": 3,
+    "onnx_parity_max_abs": 2.09808349609375e-05,
+    "quantization": {
+      "format": "QDQ",
+      "weights": "uint8 per-channel",
+      "activations": "uint8, percentile 99.99",
+      "fp32_nodes": [
+        "/windowing/Clip",
+        "/windowing/Concat",
+        "/windowing/Div",
+        "/windowing/Div_1",
+        "/windowing/Gather",
+        "/windowing/Gather_1",
+        "/windowing/Gather_2",
+        "/windowing/Gather_3",
+        "/windowing/Mul",
+        "/windowing/Reshape",
+        "/windowing/Shape_3",
+        "/windowing/Sub",
+        "/windowing/Sub_1",
+        "/windowing/Unsqueeze",
+        "/windowing/Unsqueeze_1",
+        "/windowing/Unsqueeze_2",
+        "/windowing/Unsqueeze_3",
+        "/windowing/Unsqueeze_4"
+      ],
+      "calibration_slices": 384
+    },
+    "data": {
+      "source": "ianpan/rsna-intracranial-hemorrhage-16bit-png",
+      "revision": "c40c72b1c01479e2ef08cfd2bf68014960dbadc9",
+      "tar_bytes": 144276295680,
+      "regions": "omitted",
+      "series": 21744,
+      "slices": 752802,
+      "dropped_partial_series": 29,
+      "image_size": 224,
+      "seconds": 753.1
+    },
+    "recertified": "2026-10-30T02:52:50+00:00"
   },
-  "created": "2026-10-30T01:44:37+00:00",
-  "git_sha": "706c8230df6e442e3632160dfb7622be3a32bb2d"
+  "intended_use": "Research and engineering demonstration only. Not a medical device; not validated for clinical use. Trained on 21,744 series of RSNA 2019 (single source).",
+  "files": {
+    "cnn": {
+      "path": "cnn.onnx",
+      "sha256": "8fe9a1029fe64d16933db4164276d16284d848b947c9af14ee2a00582140783a"
+    },
+    "seq": {
+      "path": "seq.onnx",
+      "sha256": "a0ed9345118bda934c346b313e71c5a1c017de5862a7d8f643f792206ad4337d"
+    },
+    "cam_weights": {
+      "path": "cam_weights.npy",
+      "sha256": "e729ffc1458368b44efe7b9271b998cd55482a01f655f34abfc2eac82e545733"
+    },
+    "cnn_fp32": {
+      "path": "cnn_fp32.onnx",
+      "sha256": "0ecaaba1fd6ca198e20b6306cf6a6321cdadfd62e7c2513b9487ba5652fbd7f4"
+    },
+    "selftest": {
+      "path": "selftest.npz",
+      "sha256": "cf791e6d120a4fd14e57becd0bbc7f7b47b72570fbd0f9d579199c836784d5f2"
+    }
+  },
+  "fp32": {
+    "calibration": {
+      "cnn": {
+        "any": [
+          0.8967519613978565,
+          -1.51616253482092
+        ],
+        "epidural": [
+          0.8106523385069452,
+          -0.8911886579923609
+        ],
+        "intraparenchymal": [
+          1.002654135075822,
+          -0.31479052158864745
+        ],
+        "intraventricular": [
+          0.9297240100640896,
+          -1.1611835091075264
+        ],
+        "subarachnoid": [
+          0.9502479398829243,
+          -0.5205292999776656
+        ],
+        "subdural": [
+          0.8606938650013469,
+          -1.1335593771382582
+        ]
+      },
+      "seq": {
+        "any": [
+          0.794044035296461,
+          -0.03274622551677189
+        ],
+        "epidural": [
+          0.7497904921402394,
+          -0.5306509161555828
+        ],
+        "intraparenchymal": [
+          0.7675658506196236,
+          -0.07082143869626206
+        ],
+        "intraventricular": [
+          0.8256198691433599,
+          0.16262268853353945
+        ],
+        "subarachnoid": [
+          0.7576599866674208,
+          -0.1976270668061196
+        ],
+        "subdural": [
+          0.7651436724144974,
+          -0.31979754683615097
+        ]
+      }
+    },
+    "thresholds": {
+      "cnn": {
+        "any": 0.4110559027604957,
+        "epidural": 0.1902559105042477,
+        "intraparenchymal": 0.3627711695936141,
+        "intraventricular": 0.4078655396602663,
+        "subarachnoid": 0.30737002743858866,
+        "subdural": 0.3337268188869596,
+        "screening_any": 0.0719206432063926,
+        "study_any": 0.6320012214315156,
+        "study_epidural": 0.1947393307187149,
+        "study_intraparenchymal": 0.6725509274055413,
+        "study_intraventricular": 0.7047581182908479,
+        "study_subarachnoid": 0.5072029415384917,
+        "study_subdural": 0.5731731675294143,
+        "study_screening_any": 0.433677664125839
+      },
+      "seq": {
+        "any": 0.42142536660121604,
+        "epidural": 0.10185831329479081,
+        "intraparenchymal": 0.4206644934749413,
+        "intraventricular": 0.4222974646365664,
+        "subarachnoid": 0.34875029002561453,
+        "subdural": 0.34266931524572947,
+        "screening_any": 0.12296467712186945,
+        "study_any": 0.28527423207380365,
+        "study_epidural": 0.3087146247823206,
+        "study_intraparenchymal": 0.4243065395507222,
+        "study_intraventricular": 0.41469015265548004,
+        "study_subarachnoid": 0.2495766018839167,
+        "study_subdural": 0.45173076986901606,
+        "study_screening_any": 0.16654479030613187
+      }
+    }
+  }
 }

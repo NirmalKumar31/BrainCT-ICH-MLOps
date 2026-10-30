@@ -3,6 +3,7 @@
 A bundle directory holds:
     model_card.json   contract (labels, context, image size), calibration, thresholds,
                       test metrics, drift reference, file checksums
+    model_card.sha256 checksum of the card itself (it holds calibration and thresholds)
     cnn.onnx          2.5D slice CNN: HU [N, 2C+1, H, W] -> logits, embedding, fmap
     seq.onnx          series model: embedding [1, T, D], logits [1, T, 6] -> refined logits
     cam_weights.npy   CNN head weights [6, D] for class activation maps
@@ -59,10 +60,13 @@ class InferenceModel:
         self.dir = Path(bundle)
         card_path = self.dir / "model_card.json"
         if not card_path.exists():
-            raise BundleError(f"no model_card.json in {self.dir}")
+            raise BundleError("no model_card.json in the bundle directory")
         self.card = json.loads(card_path.read_text())
         files = self.card["files"]
         if verify:
+            card_sum = self.dir / "model_card.sha256"
+            if card_sum.exists() and card_sum.read_text().split()[0] != sha256(card_path):
+                raise BundleError("model_card.json: checksum mismatch")
             for name, meta in files.items():
                 digest = sha256(self.dir / meta["path"])
                 if digest != meta["sha256"]:
@@ -90,18 +94,31 @@ class InferenceModel:
         self.image_size: int = contract["image_size"]
         self.batch: int = int(contract.get("batch", 16))
         self.precision = "int8" if "cnn_fp32" in files else "bundle"
+        self._fits = {k: self.card[k] for k in ("calibration", "thresholds")}
         self.selftest: dict = {"status": "absent"}
-        if precision == "fp32" and "cnn_fp32" in files:
+        if precision not in ("auto", "int8", "fp32"):
+            raise BundleError(f"unknown precision {precision!r}")
+        if precision == "fp32":
+            if "cnn_fp32" not in files:
+                raise BundleError("precision=fp32 requested but the bundle has no FP32 model")
             self._use_fp32()
         elif precision == "auto" and "selftest" in files:
             self.selftest = self.self_test()
-            if not self.selftest["passed"] and "cnn_fp32" in files:
+            if not self.selftest["passed"]:
+                if "cnn_fp32" not in files:
+                    # Serving numbers that were never certified is worse than not serving.
+                    raise BundleError(
+                        f"INT8 self-test failed on this CPU (max |dp| "
+                        f"{self.selftest['max_prob_diff']:.3f}) and there is no FP32 fallback"
+                    )
                 self._use_fp32()
 
     def _use_fp32(self) -> None:
         path = self.dir / self.card["files"]["cnn_fp32"]["path"]
         self.cnn = ort.InferenceSession(str(path), self._opts, providers=self._providers)
         self.precision = "fp32"
+        if "fp32" in self.card:  # fits of the FP32 chain (older bundles: the INT8 ones)
+            self._fits = self.card["fp32"]
 
     def self_test(self) -> dict:
         """Reproduce the certified INT8 logits on a synthetic phantom, on this CPU."""
@@ -124,6 +141,10 @@ class InferenceModel:
     @property
     def version(self) -> str:
         return self.card["version"]
+
+    @property
+    def has_seq(self) -> bool:
+        return self.seq is not None
 
     # -------------------------------------------------------------- raw model calls
     def run(self, volume: np.ndarray, with_seq: bool = True, with_fmap: bool = False) -> RawOutput:
@@ -159,13 +180,22 @@ class InferenceModel:
     # -------------------------------------------------------------- calibrated outputs
     def calibrate(self, logits: np.ndarray, head: str) -> np.ndarray:
         """head = "seq" (series endpoint) or "cnn" (lone slice). Platt params from validation."""
-        cal = self.card["calibration"][head]
+        cal = self._fits["calibration"][head]
         a = np.array([cal[k][0] for k in self.labels])
         b = np.array([cal[k][1] for k in self.labels])
         return sigmoid(logits * a + b).astype(np.float32)
 
     def thresholds(self, head: str) -> dict[str, float]:
-        return self.card["thresholds"][head]
+        return self._fits["thresholds"][head]
+
+    def study_thresholds(self, head: str) -> dict[str, float]:
+        """Per-label thresholds for the series max, fit at study level. Bundles certified
+        before those existed fall back to the per-slice ones (and "study_any")."""
+        thr = self.thresholds(head)
+        out = {k: thr.get(f"study_{k}", thr[k]) for k in self.labels}
+        out["any"] = thr["study_any"]
+        out["screening_any"] = thr.get("study_screening_any", thr["screening_any"])
+        return out
 
     def cam(self, fmap: np.ndarray, label: int) -> np.ndarray:
         """Class activation map for one slice: [D, h, w] -> [H, W] in [0, 1]."""

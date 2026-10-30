@@ -92,3 +92,15 @@ def test_evaluate_run_and_cli(tmp_path, capsys):
     main(["--compare", f"{tmp_path / 'a'}:cnn", f"{tmp_path / 'b'}:cnn", "--boot", "10"])
     assert "b / cnn" in capsys.readouterr().out
     main(["--run", str(tmp_path / "b"), "--model", "cnn", "--boot", "10"])
+
+
+def test_study_level_operating_points_are_fit_and_scored():
+    val, test = fake_predictions(1), fake_predictions(2)
+    fitted = fit_on_validation(val)
+    assert set(fitted["thresholds_study"]) == set(LABELS)
+    assert fitted["threshold_study_any"] == fitted["thresholds_study"]["any"]
+    r = score(test, fitted, n_boot=20)
+    assert set(r["study_labels"]) == set(LABELS)
+    assert r["study_screening_any"]["threshold"] == fitted["threshold_study_screening_any"]
+    subtypes = np.mean([r["labels"][k]["auc"] for k in LABELS[1:]])
+    assert r["auc_macro_subtypes"] == pytest.approx(subtypes)

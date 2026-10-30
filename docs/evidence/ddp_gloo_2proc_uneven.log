@@ -1,0 +1,7 @@
+# torchrun --nproc_per_node 2 (gloo, CPU), max_train_items=31 batch_size=8: before the fix rank 0 got 2 batches and rank 1 got 1 (hang); now both run 1 step
+epoch 0 step 0/1 loss 0.6892 4 img/s
+epoch 0 step 0/1 loss 0.6914 2 img/s
+epoch 0: {"auc_any": 0.2497, "auc_epidural": NaN, "auc_intraparenchymal": 0.7721, "auc_intraventricular": 0.8993, "auc_subarachnoid": 0.163, "auc_subdural": 0.6815, "auc_mean": 0.5531, "wlogloss_uncalibrated": 0.6808, "epoch_seconds": 1.9157, "img_per_s": 8.3521}
+wrote train predictions (4 series, 22 s)
+wrote val predictions (4 series, 21 s)
+wrote test predictions (4 series, 13 s)

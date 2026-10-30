@@ -8,6 +8,19 @@ from pathlib import Path
 import yaml
 
 
+def _coerce(value, annotation, key: str):
+    """YAML reads "1e-3" as a string (YAML 1.1 needs a dot: 1.0e-3); match the field's type."""
+    kind = str(annotation)
+    try:
+        if kind == "float" and isinstance(value, str | int):
+            return float(value)
+        if kind == "int" and isinstance(value, str):
+            return int(value)
+    except ValueError as exc:
+        raise ValueError(f"{key}: expected {kind}, got {value!r}") from exc
+    return value
+
+
 @dataclass
 class TrainConfig:
     run_name: str = "cnn25d_resnet18"
@@ -41,7 +54,7 @@ class TrainConfig:
             key, _, value = item.partition("=")
             if key not in types:
                 raise KeyError(f"unknown config key {key!r}")
-            raw[key] = yaml.safe_load(value)
+            raw[key] = _coerce(yaml.safe_load(value), types[key], key)
         unknown = set(raw) - set(types)
         if unknown:
             raise KeyError(f"unknown config keys {sorted(unknown)}")

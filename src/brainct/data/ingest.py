@@ -183,14 +183,36 @@ class Writer:
             self.csv_path.write_text(
                 "patient_id,study_id,series_id,index,filename," + ",".join(LABELS) + "\n"
             )
+        # A series counts as done once its rows are in slices.csv (written last). An .npy
+        # without rows (crash between the two) is redone and overwritten, not skipped forever.
+        with open(self.csv_path) as f:
+            next(f)
+            self._written = {line.split(",", 3)[2] for line in f if line.strip()}
+        self._claimed: set[str] = set()
 
     def done(self, sid: str) -> bool:
-        return (self.out / "series" / f"{sid}.npy").exists()
+        with self.lock:
+            return sid in self._written
+
+    def _claim(self, sid: str) -> bool:
+        """Overlapping regions can both see a series: only one of them writes it."""
+        with self.lock:
+            if sid in self._written or sid in self._claimed:
+                return False
+            self._claimed.add(sid)
+            return True
 
     def write(self, sid: str, files: dict[str, bytes]) -> bool:
         meta = self.tables.series.get(sid)
-        if meta is None or sid not in self.tables.rescale or self.done(sid):
+        if meta is None or sid not in self.tables.rescale or not self._claim(sid):
             return False
+        try:
+            return self._write(sid, meta, files)
+        finally:
+            with self.lock:
+                self._claimed.discard(sid)
+
+    def _write(self, sid: str, meta, files: dict[str, bytes]) -> bool:
         patient, study, names, labels = meta
         if set(files) != set(names):  # cut by a region boundary
             with self.lock:
@@ -213,6 +235,7 @@ class Writer:
                 f.write(f"{patient},{study},{sid},{i},{name},{','.join(map(str, labels[i]))}\n")
             self.kept += 1
             self.slices += len(names)
+            self._written.add(sid)
         return True
 
 

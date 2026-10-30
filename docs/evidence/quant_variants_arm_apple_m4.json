@@ -1,0 +1,42 @@
+{
+  "s8_full": {
+    "phantom": {
+      "max": 0.0925,
+      "mean": 0.0144
+    },
+    "real_val": {
+      "max": 0.4711,
+      "mean": 0.00881
+    }
+  },
+  "s8_reduce_range": {
+    "phantom": {
+      "max": 0.1371,
+      "mean": 0.02352
+    },
+    "real_val": {
+      "max": 0.3973,
+      "mean": 0.01167
+    }
+  },
+  "u8_full": {
+    "phantom": {
+      "max": 0.1261,
+      "mean": 0.02036
+    },
+    "real_val": {
+      "max": 0.4429,
+      "mean": 0.00838
+    }
+  },
+  "u8_reduce_range": {
+    "phantom": {
+      "max": 0.1307,
+      "mean": 0.02177
+    },
+    "real_val": {
+      "max": 0.4572,
+      "mean": 0.01071
+    }
+  }
+}

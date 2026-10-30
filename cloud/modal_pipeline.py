@@ -9,7 +9,8 @@
 Storage: `brainct-data` (HU cache, ~75 GB) and `brainct-runs` (checkpoints, predictions,
 MLflow, bundles). Training copies the cache to the container's local NVMe first: random
 3-slice reads from a network volume would starve the GPU. Training resumes from last.pt, so a
-preempted container (retries=2) continues where it stopped.
+preempted container (retries=2) continues where it stopped; checkpoints are written
+atomically (temp file + rename), so a periodic volume commit never captures half of one.
 """
 
 from __future__ import annotations
@@ -63,8 +64,21 @@ def mlflow_pull(config: str) -> None:
 
 
 def mlflow_push(config: str) -> None:
-    if MLFLOW_LOCAL.exists():
-        shutil.copyfile(MLFLOW_LOCAL, RUNS / f"mlflow-{config}.db")
+    """Consistent snapshot via SQLite's backup API (a file copy can catch a write mid-way),
+    written next to the target and renamed into place."""
+    import sqlite3
+
+    if not MLFLOW_LOCAL.exists():
+        return
+    dst = RUNS / f"mlflow-{config}.db"
+    tmp = dst.with_name(f".{dst.name}.tmp")
+    src, out = sqlite3.connect(MLFLOW_LOCAL), sqlite3.connect(tmp)
+    try:
+        src.backup(out)
+    finally:
+        out.close()
+        src.close()
+    os.replace(tmp, dst)
 
 
 def sh(*args: str, env: dict | None = None) -> None:

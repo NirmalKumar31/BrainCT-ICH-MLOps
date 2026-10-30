@@ -47,6 +47,10 @@ class MicroBatcher:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
+        while not self._queue.empty():  # fail queued jobs instead of leaving callers hanging
+            job = self._queue.get_nowait()
+            if not job.future.done():
+                job.future.set_exception(RuntimeError("service shutting down"))
 
     async def submit(self, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """(logits, embedding) for x [n, K, H, W]; large inputs are split into max_batch chunks."""
@@ -60,9 +64,19 @@ class MicroBatcher:
         return np.concatenate([p[0] for p in parts]), np.concatenate([p[1] for p in parts])
 
     async def _loop(self) -> None:
+        jobs: list[_Job] = []
+        try:
+            await self._collect(jobs)
+        except asyncio.CancelledError:
+            for j in jobs:  # taken from the queue but not answered yet
+                if not j.future.done():
+                    j.future.set_exception(RuntimeError("service shutting down"))
+            raise
+
+    async def _collect(self, jobs: list[_Job]) -> None:
         loop = asyncio.get_running_loop()
         while True:
-            jobs = [await self._queue.get()]
+            jobs[:] = [await self._queue.get()]
             size = len(jobs[0].x)
             deadline = loop.time() + self.max_wait
             while size < self.max_batch:
@@ -74,13 +88,13 @@ class MicroBatcher:
                 except TimeoutError:
                     break
                 if size + len(job.x) > self.max_batch:
-                    await self._run(jobs)  # flush, then start the next batch with this job
-                    jobs, size = [job], len(job.x)
+                    await self._run(list(jobs))  # flush, then start the next batch with this job
+                    jobs[:], size = [job], len(job.x)
                     deadline = loop.time() + self.max_wait
                     continue
                 jobs.append(job)
                 size += len(job.x)
-            await self._run(jobs)
+            await self._run(list(jobs))
 
     async def _run(self, jobs: list[_Job]) -> None:
         x = np.concatenate([j.x for j in jobs]) if len(jobs) > 1 else jobs[0].x

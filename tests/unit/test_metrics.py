@@ -90,3 +90,13 @@ def test_bootstrap_resamples_groups_not_rows():
     values = np.array([1.0] * 50 + [0.0] * 50)
     lo, hi = bootstrap_ci(lambda i: values[i].mean(), groups, n=400, seed=0)
     assert lo == 0.0 and hi == 1.0
+
+
+@pytest.mark.parametrize(("scale", "a", "b"), [(3, 0.4, -1.0), (4, 0.3, -2.0), (8, 0.1, -3.0)])
+def test_platt_converges_on_overconfident_logits(scale, a, b):
+    """Plain Newton from (1, 0) ran away here (a ~ 600, b ~ -1e10)."""
+    rng = np.random.default_rng(1)
+    z = rng.normal(0, scale, 50_000)
+    y = (rng.random(len(z)) < 1 / (1 + np.exp(-(a * z + b)))).astype(int)
+    fa, fb = fit_platt(z, y)
+    assert fa == pytest.approx(a, abs=0.03) and fb == pytest.approx(b, abs=0.1)

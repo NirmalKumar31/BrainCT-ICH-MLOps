@@ -24,6 +24,15 @@ def device() -> torch.device:
     return torch.device("cpu")
 
 
+def save_atomic(obj: object, path: Path) -> None:
+    """torch.save via a temp file + rename: a reader (resume, a volume snapshot) never sees a
+    half-written checkpoint."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.tmp")
+    torch.save(obj, tmp)
+    os.replace(tmp, path)
+
+
 def amp_dtype(dev: torch.device) -> torch.dtype | None:
     # fp16 measured faster than bf16 on Apple M4 (55 vs 34 img/s, ResNet-18 at 224).
     return {"cuda": torch.bfloat16, "mps": torch.float16}.get(dev.type)

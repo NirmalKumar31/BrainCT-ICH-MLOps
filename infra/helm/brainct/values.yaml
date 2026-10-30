@@ -1,5 +1,7 @@
 image:
   repository: brainct-api
+  # Pushed tags are immutable (Artifact Registry, infra/terraform): use <version>-<git sha>,
+  # so IfNotPresent can never run a stale image under a reused tag.
   tag: "0.2.1"
   pullPolicy: IfNotPresent
 
@@ -13,6 +15,9 @@ resources:
 env:
   BRAINCT_THREADS: "2"
   BRAINCT_MAX_CONCURRENCY: "1"
+  # Series decoded at once; each can hold up to BRAINCT_MAX_TOTAL_MB (200) of slices.
+  BRAINCT_MAX_DECODES: "2"
+  BRAINCT_MAX_REQUEST_MB: "210"
   BRAINCT_MAX_SLICES: "256"
   BRAINCT_DRIFT_WINDOW: "2000"
   BRAINCT_LOG_LEVEL: INFO
@@ -29,9 +34,15 @@ autoscaling:
   # Scale down slowly: a series request is seconds of CPU, so load arrives in bursts.
   scaleDownStabilizationSeconds: 120
 
+# maxUnavailable, not minAvailable: with a single replica, minAvailable 1 forbids every
+# voluntary eviction and blocks node drains and upgrades.
 podDisruptionBudget:
   enabled: true
-  minAvailable: 1
+  maxUnavailable: 1
+
+# /v1/feedback writes the live quality metrics; set a Secret (key: token) to require it.
+feedbackToken:
+  existingSecret: ""
 
 networkPolicy:
   enabled: true

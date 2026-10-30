@@ -28,21 +28,39 @@ class Volume:
     warnings: list[str] = field(default_factory=list)
 
 
-def unpack_zip(data: bytes, max_files: int, max_total: int) -> list[bytes]:
-    """Members of a zip, with limits on count and *uncompressed* size (zip bombs)."""
+def _is_slice_member(m: zipfile.ZipInfo) -> bool:
+    """Skip directories, macOS metadata, hidden files and DICOMDIR (a CD's index, no image)."""
+    name = m.filename.rsplit("/", 1)[-1]
+    return not (
+        m.is_dir()
+        or m.filename.startswith("__MACOSX")
+        or name.startswith(".")
+        or name.upper() == "DICOMDIR"
+    )
+
+
+def unpack_zip(data: bytes, max_files: int, max_total: int, max_file: int) -> list[bytes]:
+    """Members of a zip, with limits on count, per-member and total *uncompressed* size (zip
+    bombs). max_total is what is left of the request's budget."""
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except zipfile.BadZipFile as exc:
         raise UploadError(422, "not a valid zip archive") from exc
-    members = [m for m in zf.infolist() if not m.is_dir() and not m.filename.startswith("__MACOSX")]
+    members = [m for m in zf.infolist() if _is_slice_member(m)]
     if len(members) > max_files:
         raise UploadError(413, f"zip holds {len(members)} files; limit is {max_files}")
+    if any(m.file_size > max_file for m in members):
+        raise UploadError(413, f"a zip member exceeds {max_file // 2**20} MB")
     if sum(m.file_size for m in members) > max_total:
         raise UploadError(413, "zip contents exceed the upload size limit")
     out = []
     for m in sorted(members, key=lambda m: m.filename):
-        with zf.open(m) as f:
-            blob = f.read(max_total + 1)
+        try:
+            with zf.open(m) as f:
+                blob = f.read(max_file + 1)
+        except (zipfile.BadZipFile, NotImplementedError, RuntimeError) as exc:
+            # bad CRC, unsupported compression or an encrypted member
+            raise UploadError(422, "unreadable zip member") from exc
         if len(blob) != m.file_size:  # header lied about the size
             raise UploadError(413, "zip member larger than declared")
         out.append(blob)
@@ -68,14 +86,34 @@ def assemble(slices: list[tuple[np.ndarray, SliceInfo]]) -> Volume:
     uids = {i.series_uid for i in infos if i.series_uid}
     if len(uids) > 1:
         raise UploadError(422, f"upload mixes {len(uids)} series; send one series per request")
+    if uids and any(i.series_uid is None for i in infos):
+        raise UploadError(422, "some slices have no SeriesInstanceUID; cannot tell they belong")
 
     zs = [i.z for i in infos]
     numbers = [i.instance_number for i in infos]
     if all(z is not None for z in zs):
         order = np.argsort(np.asarray(zs, dtype=np.float64), kind="stable")
         how = "position"
-        if len({round(z, 3) for z in zs if z is not None}) < len(zs):
-            warnings.append("duplicate slice positions; context between them is unreliable")
+        # The same slice uploaded twice: keep one (identical position and pixels).
+        keep, dropped = [int(order[0])], 0
+        for k in order[1:]:
+            last = keep[-1]
+            if abs(zs[k] - zs[last]) < 1e-3 and np.array_equal(slices[k][0], slices[last][0]):
+                dropped += 1
+            else:
+                keep.append(int(k))
+        order = np.asarray(keep)
+        if dropped:
+            warnings.append(f"dropped {dropped} duplicate slice(s)")
+        z_sorted = np.asarray([zs[k] for k in order], dtype=np.float64)
+        steps = np.diff(z_sorted)
+        if len(steps) and (steps < 1e-3).any():
+            warnings.append("slices share a position; context between them is unreliable")
+        elif len(steps) >= 2 and steps.max() > 2 * np.median(steps):
+            warnings.append(
+                f"irregular slice spacing (gap {steps.max():.1f} mm vs median "
+                f"{np.median(steps):.1f} mm); slices may be missing"
+            )
     elif all(n is not None for n in numbers):
         order = np.argsort(np.asarray(numbers), kind="stable")
         how = "instance_number"
@@ -84,9 +122,9 @@ def assemble(slices: list[tuple[np.ndarray, SliceInfo]]) -> Volume:
         order = np.arange(len(slices))
         how = "upload"
         warnings.append("no slice geometry; kept upload order")
-    if len(slices) < 8:
+    if len(order) < 8:
         warnings.append(
-            f"only {len(slices)} slices: the series model is trained on whole scans (24-60 slices)"
+            f"only {len(order)} slices: the series model is trained on whole scans (24-60 slices)"
         )
     if any(i.sign_fixed for i in infos):
         warnings.append("corrected 12-bit sign encoding on some slices")

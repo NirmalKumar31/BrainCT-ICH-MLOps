@@ -40,6 +40,10 @@ spec:
             {{- range $k, $v := .Values.env }}
             - { name: {{ $k }}, value: {{ $v | quote }} }
             {{- end }}
+            {{- with .Values.feedbackToken.existingSecret }}
+            - name: BRAINCT_FEEDBACK_TOKEN
+              valueFrom: { secretKeyRef: { name: {{ . }}, key: token } }
+            {{- end }}
           resources: {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
@@ -47,9 +51,11 @@ spec:
             capabilities: { drop: [ALL] }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
-          # Bundle load + checksum + warm-up take a few seconds; /ready gates traffic.
+          # Bundle load + checksum + self-test + warm-up run before uvicorn listens, so
+          # /health answers once that is over. A pod whose bundle failed to load stays up
+          # and unready (not crash-looping), so BrainCTModelNotLoaded can see it.
           startupProbe:
-            httpGet: { path: /ready, port: http }
+            httpGet: { path: /health, port: http }
             periodSeconds: 2
             failureThreshold: 60
           readinessProbe:

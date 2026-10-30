@@ -1,11 +1,15 @@
-# Build the API image on amd64 (GKE nodes) and push to Artifact Registry.
+# Build the API image on amd64 (GKE nodes) and push to Artifact Registry. Tags are immutable:
+# use <version>-<git sha>. Runs as the build service account from infra/terraform.
 #   gcloud builds submit --config cloud/cloudbuild.yaml \
-#     --substitutions=_IMAGE=<registry>/brainct-api:<tag>,_BUNDLE=artifacts/bundle .
+#     --service-account=projects/<project>/serviceAccounts/<build_service_account output> \
+#     --substitutions=_IMAGE=<registry>/brainct-api:0.3.0-<sha>,_GIT_SHA=<sha> .
 steps:
   - name: gcr.io/cloud-builders/docker
     args: [build, -f, serving/Dockerfile, --build-arg, "BUNDLE=${_BUNDLE}",
            --build-arg, "GIT_SHA=${_GIT_SHA}", -t, "${_IMAGE}", .]
 images: ["${_IMAGE}"]
+options:
+  logging: CLOUD_LOGGING_ONLY  # a custom build service account cannot use the default bucket
 substitutions:
   _BUNDLE: artifacts/bundle
   _GIT_SHA: unknown

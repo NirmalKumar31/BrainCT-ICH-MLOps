@@ -93,16 +93,29 @@ def _zip(members: dict[str, bytes]) -> bytes:
 
 
 def test_unpack_zip_limits():
-    z = _zip({"a.dcm": b"x" * 10, "b.dcm": b"y" * 10, "__MACOSX/._a": b"junk", "dir/": b""})
-    assert unpack_zip(z, 10, 1000) == [b"x" * 10, b"y" * 10]
+    z = _zip(
+        {
+            "a.dcm": b"x" * 10,
+            "b.dcm": b"y" * 10,
+            "__MACOSX/._a": b"junk",
+            "dir/": b"",
+            "cd/DICOMDIR": b"index",
+            "cd/.DS_Store": b"junk",
+        }
+    )
+    assert unpack_zip(z, 10, 1000, 100) == [b"x" * 10, b"y" * 10]
     with pytest.raises(UploadError, match="limit"):
-        unpack_zip(z, 1, 1000)
+        unpack_zip(z, 1, 1000, 100)
+    with pytest.raises(UploadError, match="member exceeds"):  # per-file limit inside zips
+        unpack_zip(z, 10, 1000, 5)
+    with pytest.raises(UploadError, match="exceed"):  # what is left of the request budget
+        unpack_zip(z, 10, 15, 100)
     bomb = _zip({"big.dcm": b"\0" * 5_000_000})  # compresses to a few KB
     assert len(bomb) < 50_000
     with pytest.raises(UploadError, match="exceed"):
-        unpack_zip(bomb, 10, 1_000_000)
+        unpack_zip(bomb, 10, 1_000_000, 10_000_000)
     with pytest.raises(UploadError, match="zip"):
-        unpack_zip(b"PK not really", 10, 1000)
+        unpack_zip(b"PK not really", 10, 1000, 100)
 
 
 def test_settings_from_env(monkeypatch):

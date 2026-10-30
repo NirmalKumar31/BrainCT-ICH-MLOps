@@ -46,14 +46,14 @@ comes from [`docs/results.md`](docs/results.md); proof (screenshots, logs, raw o
 
 | | Result (held-out test: 2,841 patients, 3,231 series, 111,941 slices; all of RSNA) |
 |---|---|
-| **Deployed model** | ResNet-50 + series model, INT8: macro ROC AUC **0.981** (95% CI 0.978–0.984, patient bootstrap); RSNA weighted log loss **0.066**; study-level AUC "any" **0.978** |
+| **Deployed model** | ResNet-50 + series model, INT8: macro ROC AUC **0.981** (95% CI 0.978–0.984, patient bootstrap; same over the 5 subtypes: 0.981, 0.977–0.984); RSNA weighted log loss **0.066**; study-level AUC "any" **0.978** |
 | **Series model vs single-slice CNN** | 0.973 → **0.982** macro AUC (FP32), CIs do not overlap; subarachnoid 0.961 → **0.979**, subdural 0.961 → **0.974** |
-| **Trained on a cloud GPU** | whole 144 GB archive ingested in 753 s; ResNet-50 at ~1,600 img/s on an A100 (Modal), ~30 min per model |
-| **Calibrated, with operating points** | ECE ≤ 0.004 per label (slice level); screening: 95.3% sensitivity at 92.5% specificity |
+| **Trained on a cloud GPU** | whole 144 GB archive ingested in 753 s; ResNet-50 at ~1,600 img/s on an A100 (Modal), 6 epochs in ~11 min |
+| **Calibrated, with certified operating points** | ECE ≤ 0.004 per label (slice level); study-level calls fit and scored at study level: hemorrhage 92.3% sensitivity / 94.7% specificity, screening flag 95.6% / 90.7% |
 | **INT8** | macro AUC 0.981 vs 0.982 FP32; 24 MB vs 94 MB; 32-slice series in **586 ms** vs 1,836 ms (FP32 ONNX) vs 5,792 ms (PyTorch) on an M4 |
 | **Served = certified, across CPUs** | certified on x86, served on ARM: 60 real series through the API, mean \|Δp\| **0.00026**; on GKE (ResNet-18 bundle) **0.0009** |
-| **Caught a cloud-only numerics bug** | INT8 diverged by 0.56 on GKE's AMD EPYC (no VNNI); fixed with uint8 weights + a per-pod startup self-test with FP32 fallback |
-| **GKE autoscaling** | HPA 1 → 4 pods; 0 errors up to 16 concurrent clients; Terraform apply → test → destroy |
+| **Per-CPU INT8 numerics, checked in every pod** | the reference measured INT8 costing 0.007 AUC on AMD EPYC (no VNNI); here, through the series model, it broke serving (max \|Δp\| 0.56 on GKE). Fixed with uint8 weights + a startup self-test against the certified outputs, falling back to FP32 |
+| **GKE autoscaling** | HPA scaled 1 → 3 ready pods (a 4th requested, still provisioning at the end); 0 errors up to 16 concurrent clients; Terraform apply → test → destroy |
 | **Monitoring that fired** | drift PSI and latency alerts fired and reached Alertmanager; live AUC 0.959 from 80 labelled studies via `/v1/feedback` |
 | **CI** | lint, types, tests (94% coverage), Trivy, container smoke test, **kind + Helm e2e**, Terraform validate/tflint |
 
@@ -65,22 +65,23 @@ comes from [`docs/results.md`](docs/results.md); proof (screenshots, logs, raw o
 |---|---|---|
 | Model input | single slice | whole series (CNN + BiGRU series model); 2.5D tested |
 | Training data | all 752,803 slices (A100, Slurm) | all 752,802 slices (A100, Modal, one command per stage); 9.5% sample on a laptop |
-| Test macro AUC | 0.977 (ResNet-50, single slice) | **0.981** INT8 / **0.982** FP32 (ResNet-50 + series model, CI 0.979–0.984; different patient split) |
+| Test macro AUC, 5 subtypes | 0.977 (0.973–0.980), ResNet-50, single slice | **0.981 (0.977–0.984)** INT8 deployed chain; same single-slice ResNet-50 here: 0.972 (FP32). Different patient splits, overlapping CIs |
 | Subtypes it calls weakest | subarachnoid, subdural | subarachnoid 0.979, subdural 0.974 |
 | Probabilities | thresholds | Platt-calibrated, ECE reported, screening + study operating points |
-| What is certified | exported model | the deployed chain, through the serving code, on ARM and x86 |
+| What is certified | exported ONNX model; a test checks served = offline ONNX | the deployed chain (INT8 CNN → series model, calibration, thresholds) through the serving code, on ARM and x86 |
 | Experiment tracking | Weights & Biases | MLflow |
-| Multi-GPU | no | DDP (`torchrun`), verified with 2 processes |
-| Serving | FastAPI, ONNX INT8, micro-batching | + series endpoint, CAM heatmaps, bundle checksums, numerics self-test with FP32 fallback |
+| Multi-GPU | not described | DDP (`torchrun`), verified with 2 processes |
+| Serving | FastAPI, ONNX INT8, micro-batching (+55% req/s under overload, measured on GKE) | + series endpoint, CAM heatmaps, bundle and card checksums, numerics self-test with FP32 fallback, streaming upload limits |
 | Drift monitoring | listed as missing | input + prediction PSI, alert |
-| Quality monitoring | no | live AUC / Brier / ECE from delayed ground truth, alert |
-| Alert routing | no | Alertmanager |
+| Monitoring | Prometheus + Grafana | + live AUC / Brier / ECE from delayed ground truth, outage / error / drift / quality alerts, Alertmanager routing |
 | Cloud | GKE Autopilot, Terraform, Helm, HPA | same, plus PDB, NetworkPolicy (Dataplane V2), least-privilege node SA |
-| Deployment testing | manual | kind + Helm e2e in CI on every push; real-series e2e against certified outputs |
+| Tests | 420 tests, 86% coverage, regression tests, image smoke test in CI | 107 tests, 94% coverage, release gates on the trained bundle, plus kind + Helm e2e in CI (rolling restart under traffic, Prometheus scrape and rules) and real-series e2e against certified outputs |
 
-Both projects test on a patient-level split of all of RSNA, but not the same split, so the
-comparison is not exact. Here the same single-slice ResNet-50 reaches 0.973 (CI 0.969–0.975);
-the gain comes from the series model reading the whole scan.
+Both projects test on a patient-level split of all of RSNA, but not the same split, and the
+CIs overlap: the deployed model is comparable to the reference or slightly better, not
+provably better. Within this repository the comparison is controlled: on the 5 subtypes the
+same single-slice ResNet-50 scores 0.972 (0.968–0.975) and the series model lifts it to 0.982
+(0.978–0.984) in FP32, with non-overlapping CIs.
 
 ## Architecture
 
@@ -172,6 +173,7 @@ terraform -chdir=infra/terraform apply
 gcloud builds submit --config cloud/cloudbuild.yaml --substitutions=_IMAGE=<registry>/brainct-api:0.2.1 <context>
 helm install brainct infra/helm/brainct -f infra/helm/brainct/values-gke.yaml --set image.repository=<registry>/brainct-api
 kubectl apply -k monitoring
+kubectl -n brainct-monitoring create secret generic grafana-admin --from-literal=password="$(openssl rand -hex 16)"
 uv run python scripts/e2e_real_series.py http://127.0.0.1:8080 --tol 0.05 --feedback
 terraform -chdir=infra/terraform destroy
 ```
@@ -186,8 +188,10 @@ weights-free stand-in model of the same interface; that is what CI deploys.
 - **One source, one seed:** RSNA 2019 only, no external validation; each ablation arm was
   trained once.
 - **Series-model training embeddings are in-sample** (from the CNN trained on those slices).
-- **Study-level probabilities are not re-calibrated:** slice-level ECE ≤ 0.012, but the max over
-  a series showed ECE 0.08–0.12 on 80 live-labelled studies.
+- **Study-level probabilities are not re-calibrated:** slice-level ECE ≤ 0.004, but the max over
+  a series is not a calibrated study probability: live study-level ECE was 0.03–0.14 per label
+  on 60 labelled studies (0.08–0.12 on GKE with the ResNet-18 bundle). Study-level *decisions*
+  use thresholds fit at study level on validation.
 - **Feedback is joined per pod:** predictions awaiting ground truth live in each pod's memory,
   so with several replicas feedback must reach the pod that served the request. A shared store
   (e.g. Redis) or an offline join from prediction logs is needed in production.

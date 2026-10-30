@@ -10,7 +10,12 @@
 3. The deployed chain (INT8 CNN -> series model) runs through serving.model.InferenceModel on
    validation and test: calibration and thresholds are fit on validation, test is scored once.
    FP32 ONNX is scored the same way, so the INT8 cost is measured, not assumed.
-4. Drift reference histograms from training slices; model card with checksums.
+4. Drift reference histograms from training slices; model card with checksums (and a
+   checksum of the card itself, which holds the calibration and thresholds).
+
+Re-certify an existing bundle from its saved chain predictions (no re-export), e.g. after a
+change to the evaluation:  uv run python -m brainct.optimization.export --recertify \
+    --out artifacts/bundle
 """
 
 from __future__ import annotations
@@ -39,7 +44,7 @@ from onnxruntime.quantization.shape_inference import quant_pre_process
 
 from brainct import __version__
 from brainct.constants import IMAGE_SIZE, LABELS, WINDOWS
-from brainct.evaluation import calibrate, fit_on_validation, score
+from brainct.evaluation import calibrate, fit_on_validation, load, score
 from brainct.monitoring.drift import build_reference, slice_features
 from brainct.serving.model import InferenceModel, sha256
 from brainct.training.data import Series, load_series, read_volume
@@ -137,11 +142,99 @@ def chain_predictions(model: InferenceModel, series: list[Series]) -> dict[str, 
 
 
 def write_card(out: Path, card: dict) -> None:
-    card["files"] = {
-        name: {"path": path, "sha256": sha256(out / path)}
-        for name, path in card.pop("_files").items()
-    }
+    if "_files" in card:
+        card["files"] = {
+            name: {"path": path, "sha256": sha256(out / path)}
+            for name, path in card.pop("_files").items()
+        }
     (out / "model_card.json").write_text(json.dumps(card, indent=2))
+    (out / "model_card.sha256").write_text(sha256(out / "model_card.json") + "\n")
+
+
+def certify(work: Path, boot: int) -> dict[str, dict[str, Any]]:
+    """Fit on validation and score test, for every saved chain (precision x head)."""
+    results: dict[str, dict[str, Any]] = {}
+    for precision in ("fp32", "int8"):
+        results[precision] = {}
+        for head in ("cnn", "seq"):
+            val = load(work / f"chain_{precision}_{head}_val.npz")
+            test = load(work / f"chain_{precision}_{head}_test.npz")
+            fitted = fit_on_validation(val)
+            results[precision][head] = {"fitted": fitted, "test": score(test, fitted, boot)}
+    return results
+
+
+def operating_points(fitted: dict) -> dict[str, dict]:
+    """The calibration and thresholds the service applies, for one precision and head."""
+    return {
+        "calibration": fitted["calibration"],
+        "thresholds": {
+            **fitted["thresholds_f1"],  # per slice
+            "screening_any": fitted["threshold_screening_any"],
+            **{f"study_{k}": v for k, v in fitted["thresholds_study"].items()},  # per study
+            "study_screening_any": fitted["threshold_study_screening_any"],
+        },
+    }
+
+
+def apply_certification(card: dict, results: dict[str, dict[str, Any]], val_seq: dict) -> None:
+    """Write fits, test metrics and the prediction-drift reference into the card."""
+    heads = ("cnn", "seq")
+    ops = {p: {h: operating_points(results[p][h]["fitted"]) for h in heads} for p in results}
+    card["calibration"] = {h: ops["int8"][h]["calibration"] for h in heads}
+    card["thresholds"] = {h: ops["int8"][h]["thresholds"] for h in heads}
+    # The FP32 fallback gets its own fits: the INT8 ones are off by a little on FP32 logits.
+    card["fp32"] = {
+        "calibration": {h: ops["fp32"][h]["calibration"] for h in heads},
+        "thresholds": {h: ops["fp32"][h]["thresholds"] for h in heads},
+    }
+
+    def summary(r: dict) -> dict:
+        t = r["test"]
+        return {
+            "auc_macro": t["auc_macro"],
+            "auc_macro_ci": t["auc_macro_ci"],
+            "auc_macro_subtypes": t["auc_macro_subtypes"],
+            "auc_macro_subtypes_ci": t["auc_macro_subtypes_ci"],
+            "weighted_log_loss": t["weighted_log_loss"],
+            "study_any_auc": t["study_any"]["auc"],
+            "auc": {k: t["labels"][k]["auc"] for k in LABELS},
+        }
+
+    card["metrics_test"] = {p: {h: summary(results[p][h]) for h in heads} for p in results}
+    card["metrics_test"]["n"] = {
+        k: results["int8"]["seq"]["test"][k] for k in ("slices", "series", "patients")
+    }
+    if "drift_reference" in card:
+        seq_cal = [tuple(card["calibration"]["seq"][k]) for k in LABELS]
+        p_any = calibrate(val_seq["logits"], seq_cal)[:, 0]
+        card["drift_reference"]["p_any"] = build_reference({"p_any": p_any})["p_any"]
+
+
+def write_report(out: Path, results: dict[str, dict[str, Any]]) -> None:
+    (out.parent / "export_report.json").write_text(
+        json.dumps({p: {h: results[p][h]["test"] for h in results[p]} for p in results}, indent=2)
+    )
+    for p in results:
+        for h in ("cnn", "seq"):
+            t = results[p][h]["test"]
+            print(
+                f"{p}/{h}: macro AUC {t['auc_macro']:.4f} (subtypes {t['auc_macro_subtypes']:.4f})"
+                f"  wlogloss {t['weighted_log_loss']:.4f}  study AUC {t['study_any']['auc']:.4f}"
+            )
+
+
+def recertify(out: Path, boot: int) -> None:
+    work = out.with_name(out.name + ".work")
+    card = json.loads((out / "model_card.json").read_text())
+    results = certify(work, boot)
+    apply_certification(card, results, load(work / "chain_int8_seq_val.npz"))
+    card.setdefault("provenance", {})["recertified"] = datetime.now(UTC).isoformat(
+        timespec="seconds"
+    )
+    write_card(out, card)
+    write_report(out, results)
+    print(f"re-certified {out}")
 
 
 def selftest_volume(size: int = IMAGE_SIZE, slices: int = 12) -> np.ndarray:
@@ -172,13 +265,19 @@ def git_sha() -> str:
 
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    ap.add_argument("--run", type=Path, required=True)
+    ap.add_argument("--run", type=Path)
+    ap.add_argument("--recertify", action="store_true", help="refit + rescore saved chains")
     ap.add_argument("--out", type=Path, default=Path("artifacts/bundle"))
     ap.add_argument("--calib-slices", type=int, default=384)
     ap.add_argument("--boot", type=int, default=1000)
     ap.add_argument("--max-series", type=int, default=None, help="smoke runs only")
     ap.add_argument("--data-dir", type=Path, default=None, help="override the run's data_dir")
     args = ap.parse_args(argv)
+    if args.recertify:
+        recertify(args.out, args.boot)
+        return
+    if args.run is None:
+        ap.error("--run is required")
     torch.set_num_threads(8)
 
     ck = torch.load(args.run / "best.pt", map_location="cpu", weights_only=False)
@@ -217,6 +316,17 @@ def main(argv: list[str] | None = None) -> None:
         parity = max(parity, float(np.abs(sess.run(["logits"], {"hu": x})[0] - ref).max()))
     print(f"ONNX FP32 vs PyTorch max |logit diff| = {parity:.2e}")
     assert parity < 1e-3, "ONNX export does not match PyTorch"
+    seq_sess = ort.InferenceSession(str(work / "seq.onnx"), providers=["CPUExecutionProvider"])
+    seq_parity = 0.0
+    for s in val[:2]:
+        x = contexts(read_volume(s), cfg["context"])
+        logits, emb = sess.run(["logits", "embedding"], {"hu": x})
+        with torch.no_grad():
+            ref = seq(torch.from_numpy(emb)[None], torch.from_numpy(logits)[None])[0].numpy()
+        got = seq_sess.run(["refined"], {"embedding": emb[None], "logits": logits[None]})[0][0]
+        seq_parity = max(seq_parity, float(np.abs(got - ref).max()))
+    print(f"series model ONNX vs PyTorch max |logit diff| = {seq_parity:.2e}")
+    assert seq_parity < 1e-3, "series-model ONNX export does not match PyTorch"
 
     # ---- INT8
     t0 = time.time()
@@ -245,7 +355,6 @@ def main(argv: list[str] | None = None) -> None:
     print(f"quantized in {time.time() - t0:.0f} s; FP32 nodes kept: {excluded}")
 
     # ---- certify both precisions through the serving code path
-    results: dict[str, dict[str, Any]] = {}
     chains: dict[str, tuple[Path, dict[str, Any], dict]] = {}
     for precision in ("fp32", "int8"):
         stage = work / f"bundle_{precision}"
@@ -277,18 +386,11 @@ def main(argv: list[str] | None = None) -> None:
         for split, pred in (("val", val_pred), ("test", test_pred)):
             for head in ("cnn", "seq"):
                 np.savez(work / f"chain_{precision}_{head}_{split}.npz", **pred[head])
-        results[precision] = {}
-        for head in ("cnn", "seq"):
-            fitted = fit_on_validation(val_pred[head])
-            results[precision][head] = {
-                "fitted": fitted,
-                "test": score(test_pred[head], fitted, args.boot),
-            }
         chains[precision] = (stage, card, val_pred)
+    results = certify(work, args.boot)
 
     # ---- final bundle = INT8 chain
     stage, card, val_pred = chains["int8"]
-    res = results["int8"]
     # FP32 fallback + self-test golden outputs: the *certified* INT8 logits on a synthetic
     # phantom, computed here. Each pod reproduces them on its own CPU at startup; if it cannot,
     # this CPU's INT8 kernels are not the ones that were certified, and the pod serves FP32.
@@ -308,31 +410,6 @@ def main(argv: list[str] | None = None) -> None:
     card["selftest"] = {"max_prob_diff": 0.02, "int8_vs_fp32_on_build_machine": build_diff}
     card["_files"] |= {"cnn_fp32": "cnn_fp32.onnx", "selftest": "selftest.npz"}
     print(f"self-test golden written; INT8 vs FP32 on build machine: {build_diff:.4f}")
-    card["calibration"] = {h: res[h]["fitted"]["calibration"] for h in ("cnn", "seq")}
-    card["thresholds"] = {
-        h: {
-            **res[h]["fitted"]["thresholds_f1"],
-            "screening_any": res[h]["fitted"]["threshold_screening_any"],
-            "study_any": res[h]["fitted"]["threshold_study_any"],
-        }
-        for h in ("cnn", "seq")
-    }
-
-    def summary(r: dict) -> dict:
-        t = r["test"]
-        return {
-            "auc_macro": t["auc_macro"],
-            "auc_macro_ci": t["auc_macro_ci"],
-            "weighted_log_loss": t["weighted_log_loss"],
-            "study_any_auc": t["study_any"]["auc"],
-            "auc": {k: t["labels"][k]["auc"] for k in LABELS},
-        }
-
-    card["metrics_test"] = {p: {h: summary(results[p][h]) for h in ("cnn", "seq")} for p in results}
-    card["metrics_test"]["n"] = {
-        k: results["int8"]["seq"]["test"][k] for k in ("slices", "series", "patients")
-    }
-
     # drift reference: input features from training slices, p_any from validation (natural prior)
     rng = np.random.default_rng(11)
     feats: dict[str, list[float]] = {}
@@ -341,17 +418,15 @@ def main(argv: list[str] | None = None) -> None:
         for i in range(0, s.length, 3):
             for k, v in slice_features(vol[i]).items():
                 feats.setdefault(k, []).append(v)
-    seq_cal = [tuple(card["calibration"]["seq"][k]) for k in LABELS]
-    p_any = calibrate(val_pred["seq"]["logits"], seq_cal)[:, 0]
-    card["drift_reference"] = build_reference(
-        {k: np.asarray(v) for k, v in feats.items()} | {"p_any": p_any}
-    )
+    card["drift_reference"] = build_reference({k: np.asarray(v) for k, v in feats.items()})
+    apply_certification(card, results, val_pred["seq"])  # also adds the p_any reference
     card["provenance"] = {
         "created": datetime.now(UTC).isoformat(timespec="seconds"),
         "git_sha": git_sha(),
         "train_config": cfg,
         "best_epoch": ck["epoch"],
         "onnx_parity_max_abs": parity,
+        "seq_onnx_parity_max_abs": seq_parity,
         "quantization": {
             "format": "QDQ",
             "weights": "uint8 per-channel",
@@ -369,16 +444,7 @@ def main(argv: list[str] | None = None) -> None:
     write_card(stage, card)
     shutil.rmtree(args.out, ignore_errors=True)
     shutil.copytree(stage, args.out)
-    (args.out.parent / "export_report.json").write_text(
-        json.dumps({p: {h: results[p][h]["test"] for h in results[p]} for p in results}, indent=2)
-    )
-    for p in results:
-        for h in ("cnn", "seq"):
-            t = results[p][h]["test"]
-            print(
-                f"{p}/{h}: macro AUC {t['auc_macro']:.4f}  wlogloss {t['weighted_log_loss']:.4f}"
-                f"  study AUC {t['study_any']['auc']:.4f}"
-            )
+    write_report(args.out, results)
     sizes = {f: (work / f).stat().st_size / 1e6 for f in ("cnn.fp32.onnx", "cnn.int8.onnx")}
     print("sizes MB:", {k: round(v, 1) for k, v in sizes.items()})
     print(f"bundle written to {args.out}")

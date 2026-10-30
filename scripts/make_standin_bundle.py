@@ -108,6 +108,8 @@ def build(out: Path) -> Path:
             "sha256": hashlib.sha256((out / path).read_bytes()).hexdigest(),
         }
     (out / "model_card.json").write_text(json.dumps(card, indent=2))
+    card_sum = hashlib.sha256((out / "model_card.json").read_bytes()).hexdigest()
+    (out / "model_card.sha256").write_text(card_sum + "\n")
     return out
 
 

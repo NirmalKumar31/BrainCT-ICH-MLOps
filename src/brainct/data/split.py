@@ -33,6 +33,23 @@ def stratum(labels: set[str]) -> str:
     return "any" if "any" in labels else "negative"
 
 
+def _no_empty_split(bounds: list[int], n: int) -> list[int]:
+    """Per-stratum rounding can leave a split empty (n=5: 4/0/1; n=3: 2/1/0), which is exactly
+    what stratifying is meant to prevent. Move one patient into each empty split from the
+    largest; strata that already fill every split keep their boundaries (and assignments)."""
+    counts = [b - a for a, b in zip([0, *bounds[:-1]], bounds, strict=True)]
+    if n >= len(counts):
+        for i, c in enumerate(counts):
+            if c == 0:
+                counts[counts.index(max(counts))] -= 1
+                counts[i] = 1
+    out, acc = [], 0
+    for c in counts:
+        acc += c
+        out.append(acc)
+    return out
+
+
 def split_patients(
     patient_stratum: dict[str, str],
     fractions: dict[str, float] = DEFAULT_FRACTIONS,
@@ -51,6 +68,7 @@ def split_patients(
         for name in names:
             acc += fractions[name]
             bounds.append(round(acc * len(group)))
+        bounds = _no_empty_split(bounds, len(group))
         start = 0
         for name, end in zip(names, bounds, strict=True):
             for p in group[start:end]:

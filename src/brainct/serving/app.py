@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
+import re
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -19,7 +22,7 @@ from typing import Annotated, Any
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import (
@@ -31,6 +34,7 @@ from prometheus_client import (
     ProcessCollector,
     generate_latest,
 )
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from brainct import __version__
 from brainct.constants import DISCLAIMER
@@ -38,7 +42,7 @@ from brainct.monitoring.drift import DriftMonitor, slice_features
 from brainct.monitoring.performance import PerformanceMonitor
 from brainct.preprocessing import window
 from brainct.serving.batching import MicroBatcher
-from brainct.serving.model import InferenceModel, RawOutput, contexts
+from brainct.serving.model import BundleError, InferenceModel, RawOutput, contexts
 from brainct.serving.schemas import (
     ErrorResponse,
     Feedback,
@@ -96,6 +100,57 @@ ERRORS: dict[int | str, dict[str, Any]] = {
         503: "model not loaded",
     }.items()
 }
+
+
+CLIENT_RID = re.compile(r"[A-Za-z0-9._:-]{1,64}")
+
+
+class BodyTooLarge(Exception):
+    pass
+
+
+class BodyLimit:
+    """Reject request bodies over `limit` bytes while they stream in.
+
+    The per-file and per-series checks in the handlers run only after Starlette has parsed the
+    whole multipart body (spooling parts > 1 MB to /tmp); without this, one request can fill
+    memory or the /tmp volume before any limit is looked at.
+    """
+
+    def __init__(self, app: ASGIApp, limit: int):
+        self.app, self.limit = app, limit
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        length = dict(scope["headers"]).get(b"content-length")
+        if length is not None and length.isdigit() and int(length) > self.limit:
+            await self._reject(send)
+            return
+        seen = 0
+
+        async def limited() -> Message:
+            nonlocal seen
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > self.limit:
+                    raise BodyTooLarge
+            return message
+
+        await self.app(scope, limited, send)
+
+    async def _reject(self, send: Send) -> None:
+        body = json.dumps({"detail": f"request body exceeds {self.limit // 2**20} MB"}).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 413,
+                "headers": [(b"content-type", b"application/json")],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
 
 class JsonFormatter(logging.Formatter):
@@ -197,11 +252,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     state: dict[str, Any] = {
         "model": None,
         "error": None,
+        "public_error": None,
         "drift": None,
         "batcher": None,
         "perf": None,
     }
-    gate = asyncio.Semaphore(settings.max_concurrency)
+    gate = asyncio.Semaphore(settings.max_concurrency)  # model calls
+    decode_gate = asyncio.Semaphore(settings.max_decodes)  # decoded series held in memory
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -237,7 +294,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
             log.log(level, "model loaded", extra={"fields": fields})
         except Exception as exc:
+            # Details go to the log only; clients see a generic 503.
             state["error"] = f"{type(exc).__name__}: {exc}"
+            # BundleError messages name the problem without paths; anything else stays generic.
+            state["public_error"] = str(exc) if isinstance(exc, BundleError) else "internal error"
             m_loaded.set(0)
             log.error("model load failed", extra={"fields": {"error": state["error"]}})
         yield
@@ -251,12 +311,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Starlette puts each newly added middleware outermost, so `observe` (added next) wraps
+    # this one: its 413s are counted, and BodyTooLarge raised mid-stream reaches `observe`.
+    app.add_middleware(BodyLimit, limit=int(settings.max_request_mb * 2**20))
+
     @app.middleware("http")
     async def observe(request: Request, call_next):
         start = time.perf_counter()
-        rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
+        # Server-generated, so it is unique: it is the key /v1/feedback joins on. A client id
+        # (if well-formed) is only logged, for tracing.
+        rid = uuid.uuid4().hex[:16]
+        client_rid = request.headers.get("x-request-id", "")
         request.state.rid = rid
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except BodyTooLarge:
+            response = JSONResponse(
+                {"detail": f"request body exceeds {settings.max_request_mb:.0f} MB"}, 413
+            )
+        except Exception:
+            # Unhandled errors must still be counted (the 5xx alert) and carry the id.
+            log.exception("unhandled error", extra={"fields": {"rid": rid}})
+            response = JSONResponse({"detail": "internal error", "request_id": rid}, 500)
         path = request.url.path
         endpoint = path if path in ENDPOINTS else "other"  # bounded label cardinality
         elapsed = time.perf_counter() - start
@@ -269,6 +345,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 extra={
                     "fields": {
                         "rid": rid,
+                        **({"client_rid": client_rid} if CLIENT_RID.fullmatch(client_rid) else {}),
                         "endpoint": endpoint,
                         "status": response.status_code,
                         "ms": round(elapsed * 1000, 1),
@@ -283,7 +360,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def require_model() -> InferenceModel:
         if state["model"] is None:
-            raise HTTPException(503, f"model not loaded: {state['error']}")
+            raise HTTPException(503, f"model not loaded: {state['public_error']}")
         return state["model"]
 
     async def read_upload(f: UploadFile, limit: int) -> bytes:
@@ -305,12 +382,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         batcher: MicroBatcher | None = state["batcher"]
         if batcher is None or explain:
             return await infer(model.run, vol, with_seq, explain)
-        m_inflight.inc()
-        try:
-            logits, emb = await batcher.submit(contexts(vol, model.context))
-            seq = await run_in_threadpool(model.seq_forward, emb, logits) if with_seq else None
-        finally:
-            m_inflight.dec()
+        x = await run_in_threadpool(contexts, vol, model.context)
+        logits, emb = await batcher.submit(x)
+        seq = await infer(model.seq_forward, emb, logits) if with_seq else None
         return RawOutput(logits, seq, None)
 
     def slice_prediction(model, probs, head, i, info) -> SlicePrediction:
@@ -327,10 +401,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         cam = model.cam(fmap[i], model.labels.index(label))
         return Heatmap(slice_index=i, label=label, png_base64=overlay_png(vol[i], cam))
 
-    def observe_drift(vol: np.ndarray, p_any: np.ndarray) -> None:
+    def observe_drift(vol: np.ndarray, p_any: np.ndarray | None) -> None:
+        """Input features always; p_any only from the head the reference was built on (seq)."""
         drift: DriftMonitor = state["drift"]
         for i in range(len(vol)):
-            drift.observe(slice_features(vol[i]) | {"p_any": float(p_any[i])})
+            feats = slice_features(vol[i])
+            drift.observe(feats if p_any is None else feats | {"p_any": float(p_any[i])})
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -353,6 +429,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 for metric in ("auc", "brier", "ece", "count"):
                     if stats[metric] is not None:
                         m_live.labels(label, metric).set(stats[metric])
+                    else:  # undefined now (e.g. one class in the window): drop, don't go stale
+                        with contextlib.suppress(KeyError):
+                            m_live.remove(label, metric)
             for name, s in state["drift"].snapshot().items():
                 m_drift_n.labels(name).set(s["count"])
                 if s["psi"] is not None:
@@ -377,11 +456,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post(
-        "/v1/feedback", responses={404: {"model": ErrorResponse}, 422: {"model": ErrorResponse}}
+        "/v1/feedback",
+        responses={
+            401: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+        },
     )
-    async def feedback(body: Feedback) -> dict[str, Any]:
+    async def feedback(
+        body: Feedback,
+        x_feedback_token: Annotated[str, Header()] = "",
+    ) -> dict[str, Any]:
         """Ground truth for an earlier series prediction (study level), by its x-request-id."""
         require_model()
+        if settings.feedback_token and not secrets.compare_digest(
+            x_feedback_token, settings.feedback_token
+        ):
+            m_feedback.labels("unauthorized").inc()
+            raise HTTPException(401, "missing or wrong x-feedback-token")
         try:
             joined = state["perf"].feedback(body.request_id, body.labels)
         except ValueError as exc:
@@ -416,47 +508,57 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         file_limit = int(settings.max_file_mb * 2**20)
         total_limit = int(settings.max_total_mb * 2**20)
         blobs: list[bytes] = []
-        total = 0
-        try:
-            for f in files:
-                is_zip = (f.filename or "").lower().endswith(".zip")
-                data = await read_upload(f, total_limit if is_zip else file_limit)
-                if is_zip:
-                    blobs.extend(
-                        await run_in_threadpool(unpack_zip, data, settings.max_slices, total_limit)
-                    )
-                else:
-                    blobs.append(data)
-                total += len(data)
-                if total > total_limit or len(blobs) > settings.max_slices:
-                    raise UploadError(
-                        413,
-                        f"limit is {settings.max_slices} slices / "
-                        f"{settings.max_total_mb:.0f} MB per request",
-                    )
-            if not blobs or not any(blobs):
-                raise UploadError(400, "no slices uploaded")
+        total = 0  # uncompressed bytes: what decoding will actually hold in memory
+        too_much = UploadError(
+            413,
+            f"limit is {settings.max_slices} slices / {settings.max_total_mb:.0f} MB per request",
+        )
+        async with decode_gate:
+            try:
+                for f in files:
+                    is_zip = (f.filename or "").lower().endswith(".zip")
+                    data = await read_upload(f, total_limit if is_zip else file_limit)
+                    if is_zip:
+                        new = await run_in_threadpool(
+                            unpack_zip,
+                            data,
+                            settings.max_slices - len(blobs),
+                            total_limit - total,
+                            file_limit,
+                        )
+                    else:
+                        new = [data]
+                    blobs.extend(new)
+                    total += sum(len(b) for b in new)
+                    if total > total_limit or len(blobs) > settings.max_slices:
+                        raise too_much
+                if not blobs or not any(blobs):
+                    raise UploadError(400, "no slices uploaded")
 
-            def decode() -> Volume:
-                return assemble([decode_one(b, model.image_size) for b in blobs])
+                def decode() -> Volume:
+                    return assemble([decode_one(b, model.image_size) for b in blobs])
 
-            vol = await run_in_threadpool(decode)
-        except UploadError as exc:
-            raise HTTPException(exc.status, exc.detail) from exc
-        t1 = time.perf_counter()
-        raw = await run_model(model, vol.hu, True, explain)
+                vol = await run_in_threadpool(decode)
+            except UploadError as exc:
+                raise HTTPException(exc.status, exc.detail) from exc
+            blobs.clear()  # free the raw bytes before inference
+            t1 = time.perf_counter()
+            head = "seq" if model.has_seq else "cnn"  # a bundle without a series model
+            raw = await run_model(model, vol.hu, head == "seq", explain)
         t2 = time.perf_counter()
 
-        probs = model.calibrate(raw.seq_logits, "seq")
-        thr = model.thresholds("seq")
+        logits = raw.seq_logits if head == "seq" else raw.cnn_logits
+        assert logits is not None
+        probs = model.calibrate(logits, head)
+        thr = model.study_thresholds(head)
         slices = [
-            slice_prediction(model, probs[i], "seq", i, vol.infos[i]) for i in range(len(probs))
+            slice_prediction(model, probs[i], head, i, vol.infos[i]) for i in range(len(probs))
         ]
         study_p = probs.max(axis=0)
         key = int(np.argmax(probs[:, 0]))
         subtypes = [k for j, k in enumerate(model.labels) if j and study_p[j] >= thr[k]]
         study = StudySummary(
-            hemorrhage=bool(study_p[0] >= thr["study_any"]),
+            hemorrhage=bool(study_p[0] >= thr["any"]),
             screening_positive=bool(study_p[0] >= thr["screening_any"]),
             probabilities={
                 k: round(float(p), 5) for k, p in zip(model.labels, study_p, strict=True)
@@ -468,19 +570,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             m_positive.labels("any").inc()
         for k in subtypes:
             m_positive.labels(k).inc()
-        observe_drift(vol.hu, probs[:, 0])
+        await run_in_threadpool(observe_drift, vol.hu, probs[:, 0] if head == "seq" else None)
         state["perf"].record(request.state.rid, study_p)
         hm = None
         if explain and raw.fmap is not None:
             label = (
                 max(subtypes, key=lambda k: study_p[model.labels.index(k)]) if subtypes else "any"
             )
-            hm = heatmap(model, vol.hu, raw.fmap, key, label)
+            hm = await run_in_threadpool(heatmap, model, vol.hu, raw.fmap, key, label)
         m_stage.labels("decode").observe(t1 - t0)
         m_stage.labels("inference").observe(t2 - t1)
         m_slices.observe(len(vol.hu))
         return SeriesResponse(
-            model=ModelRef(name=model.name, version=model.version, head="seq"),
+            model=ModelRef(name=model.name, version=model.version, head=head),
             study=study,
             slices=slices,
             ordering=vol.order,
@@ -504,19 +606,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not data:
             raise HTTPException(400, "empty upload")
         try:
-            hu, info = await run_in_threadpool(decode_one, data, model.image_size)
+            async with decode_gate:
+                hu, info = await run_in_threadpool(decode_one, data, model.image_size)
         except UploadError as exc:
             raise HTTPException(exc.status, exc.detail) from exc
         t1 = time.perf_counter()
         raw = await run_model(model, hu[None], False, explain)
         t2 = time.perf_counter()
         probs = model.calibrate(raw.cnn_logits, "cnn")
-        observe_drift(hu[None], probs[:, 0])
+        observe_drift(hu[None], None)  # CNN-head probabilities are not the drift reference's
         pred = slice_prediction(model, probs[0], "cnn", 0, info)
         hm = None
         if explain and raw.fmap is not None:
             label = max(pred.positive[1:] or ["any"], key=lambda k: pred.probabilities[k])
-            hm = heatmap(model, hu[None], raw.fmap, 0, label)
+            hm = await run_in_threadpool(heatmap, model, hu[None], raw.fmap, 0, label)
         m_stage.labels("decode").observe(t1 - t0)
         m_stage.labels("inference").observe(t2 - t1)
         warnings = ["single slice: no neighbouring context; prefer /v1/predict/series"]

@@ -28,6 +28,7 @@ from brainct.metrics import sigmoid, weighted_log_loss
 from brainct.training.common import (
     TRACKING_URI,
     load_predictions,
+    save_atomic,
     seed_everything,
     weighted_bce,
 )
@@ -122,7 +123,7 @@ def main(argv: list[str] | None = None) -> None:
         assert best_state is not None
         model.load_state_dict(best_state)
         mlflow.log_metric("seq_best_val_wlogloss", best)
-        torch.save(
+        save_atomic(
             {"model": best_state, "embed_dim": embed_dim, "hidden": cfg.seq_hidden},
             run_dir / "seq.pt",
         )

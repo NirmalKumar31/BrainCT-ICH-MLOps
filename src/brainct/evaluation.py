@@ -5,7 +5,10 @@
         artifacts/runs/cnn25d_resnet18:cnn artifacts/runs/cnn25d_resnet18:seq
 
 Everything fit (Platt calibration, operating thresholds) uses validation only; test is
-scored once with those frozen values. Study-level "any" uses the max slice probability.
+scored once with those frozen values. Study level = the max slice probability of a series;
+its thresholds are fit at study level, because that is the score the API compares them with.
+Macro AUC is reported over all six labels ("auc_macro") and over the five subtypes
+("auc_macro_subtypes", the usual definition in RSNA work).
 """
 
 from __future__ import annotations
@@ -65,15 +68,20 @@ def fit_on_validation(val: dict[str, np.ndarray]) -> dict:
     p = calibrate(val["logits"], calib)
     y = val["labels"]
     thresholds = {k: best_f1_threshold(y[:, j], p[:, j])[0] for j, k in enumerate(LABELS)}
-    study_p = series_max(p[:, 0], val["offsets"])
-    study_y = series_max(y[:, 0], val["offsets"])
+    study_p = series_max(p, val["offsets"])
+    study_y = series_max(y, val["offsets"])
+    study = {k: best_f1_threshold(study_y[:, j], study_p[:, j])[0] for j, k in enumerate(LABELS)}
     return {
         "calibration": {k: list(c) for k, c in zip(LABELS, calib, strict=True)},
         "thresholds_f1": thresholds,
         "threshold_screening_any": threshold_for_sensitivity(
             y[:, 0], p[:, 0], SCREENING_SENSITIVITY
         ),
-        "threshold_study_any": best_f1_threshold(study_y, study_p)[0],
+        "threshold_study_any": study["any"],
+        "thresholds_study": study,
+        "threshold_study_screening_any": threshold_for_sensitivity(
+            study_y[:, 0], study_p[:, 0], SCREENING_SENSITIVITY
+        ),
     }
 
 
@@ -103,13 +111,16 @@ def score(test: dict[str, np.ndarray], fitted: dict, n_boot: int = 1000) -> dict
             "threshold": thr,
             **binary_report(yj, pj, thr),
         }
-    aucs = [out["labels"][k]["auc"] for k in LABELS]
-    out["auc_macro"] = float(np.mean(aucs))
-    out["auc_macro_ci"] = bootstrap_ci(
-        lambda i: float(np.mean([roc_auc(y[i, j], p[i, j]) for j in range(len(LABELS))])),
-        groups,
-        n_boot,
-    )
+
+    def macro(cols: list[int]):
+        return lambda i: float(np.mean([roc_auc(y[i, j], p[i, j]) for j in cols]))
+
+    for name, cols in (
+        ("auc_macro", list(range(len(LABELS)))),
+        ("auc_macro_subtypes", [1, 2, 3, 4, 5]),
+    ):
+        out[name] = float(np.mean([out["labels"][LABELS[j]]["auc"] for j in cols]))
+        out[name + "_ci"] = bootstrap_ci(macro(cols), groups, n_boot)
     out["weighted_log_loss"] = weighted_log_loss(y, p)
     out["weighted_log_loss_ci"] = bootstrap_ci(
         lambda i: weighted_log_loss(y[i], p[i]), groups, n_boot
@@ -119,9 +130,10 @@ def score(test: dict[str, np.ndarray], fitted: dict, n_boot: int = 1000) -> dict
         "threshold": fitted["threshold_screening_any"],
         **binary_report(y[:, 0], p[:, 0], fitted["threshold_screening_any"]),
     }
-    sp = series_max(p[:, 0], test["offsets"])
-    sy = series_max(y[:, 0], test["offsets"])
+    sp_all = series_max(p, test["offsets"])
+    sy_all = series_max(y, test["offsets"])
     series_patients = test["patient_id"]
+    sp, sy = sp_all[:, 0], sy_all[:, 0]
     out["study_any"] = {
         "positives": int(sy.sum()),
         "auc": roc_auc(sy, sp),
@@ -129,6 +141,23 @@ def score(test: dict[str, np.ndarray], fitted: dict, n_boot: int = 1000) -> dict
         "threshold": fitted["threshold_study_any"],
         **binary_report(sy, sp, fitted["threshold_study_any"]),
     }
+    # The operating points the API reports per study (older fits lack them: skipped).
+    if "thresholds_study" in fitted:
+        out["study_labels"] = {
+            k: {
+                "positives": int(sy_all[:, j].sum()),
+                "auc": roc_auc(sy_all[:, j], sp_all[:, j]),
+                "threshold": fitted["thresholds_study"][k],
+                **binary_report(sy_all[:, j], sp_all[:, j], fitted["thresholds_study"][k]),
+            }
+            for j, k in enumerate(LABELS)
+        }
+        thr = fitted["threshold_study_screening_any"]
+        out["study_screening_any"] = {
+            "target_sensitivity": SCREENING_SENSITIVITY,
+            "threshold": thr,
+            **binary_report(sy, sp, thr),
+        }
     return out
 
 

@@ -16,8 +16,9 @@ phantoms or dashboards only; no patient image is in this repository.
 | [`mlflow_training_curves.png`](mlflow_training_curves.png), [`mlflow_runs.json`](mlflow_runs.json) | Laptop-sample runs (ResNet-18) from the MLflow store: per-epoch validation AUC (CNNs) and log loss (series models) |
 | [`certification_summary.json`](certification_summary.json) | Laptop-sample chain test metrics, FP32 vs INT8, from `make export` |
 | [`../figures/roc_test.png`](../figures/roc_test.png), [`../figures/calibration_test.png`](../figures/calibration_test.png) | Test ROC and calibration of the laptop-sample chain |
-| [`ddp_gloo_2proc.log`](ddp_gloo_2proc.log) | Distributed (DDP) training with 2 processes |
-| [`quant_variants_x86_epyc_milan.json`](quant_variants_x86_epyc_milan.json) | INT8 schemes measured on the GKE x86 CPU (the incident in `../decisions.md`) |
+| [`ddp_gloo_2proc.log`](ddp_gloo_2proc.log), [`ddp_gloo_2proc_uneven.log`](ddp_gloo_2proc_uneven.log) | Distributed (DDP) training with 2 processes; and an epoch size that used to deadlock (audit fix) |
+| [`quant_variants_x86_epyc_milan.json`](quant_variants_x86_epyc_milan.json), [`quant_variants_arm_apple_m4.json`](quant_variants_arm_apple_m4.json) | INT8 schemes measured on the GKE x86 CPU and on the M4 (phantom + real validation slices; the incident in `../decisions.md`) |
+| [`int8_reduce_range_rejected.log`](int8_reduce_range_rejected.log) | The rejected reduce_range INT8 export: series-model chain macro AUC 0.843, log loss 2.21 |
 
 ## Service
 
@@ -27,8 +28,8 @@ phantoms or dashboards only; no patient image is in this repository.
 | [`example_series_response.json`](example_series_response.json) | A real response of the trained model (synthetic phantom input, excerpt) |
 | [`heatmap_synthetic_phantom.png`](heatmap_synthetic_phantom.png) | The CAM heatmap returned with `explain=true` |
 | [`example_errors.json`](example_errors.json) | 4xx responses for bad uploads |
-| [`v1_model.json`](v1_model.json), [`v1_drift.json`](v1_drift.json) | Model card and drift state served by the API |
-| [`pytest_coverage.txt`](pytest_coverage.txt), [`ci_runs.txt`](ci_runs.txt) | Local test run with coverage; recent CI runs ([live](https://github.com/NirmalKumar31/BrainCT-ICH-MLOps/actions)) |
+| [`v1_model.json`](v1_model.json), [`v1_drift.json`](v1_drift.json) | Model card and drift state served by the API (laptop ResNet-18 bundle) |
+| [`pytest_coverage.txt`](pytest_coverage.txt), [`ci_runs.txt`](ci_runs.txt) | Local test run with coverage; CI runs at the time of writing ([live](https://github.com/NirmalKumar31/BrainCT-ICH-MLOps/actions)) |
 
 ## Kubernetes, local (kind)
 

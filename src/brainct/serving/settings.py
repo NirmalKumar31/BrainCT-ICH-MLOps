@@ -12,8 +12,10 @@ class Settings:
     bundle: str = "artifacts/bundle"
     threads: int = 0  # ONNX Runtime intra-op threads; 0 = runtime default (all cores)
     max_concurrency: int = 2  # model calls in flight; more just oversubscribes the CPU
+    max_decodes: int = 2  # series decoded at once; each can hold max_total_mb in memory
     max_file_mb: float = 4.0  # one DICOM slice
     max_total_mb: float = 200.0  # one series upload (files or zip, uncompressed)
+    max_request_mb: float = 210.0  # whole HTTP body, enforced while it streams in
     max_slices: int = 256
     drift_window: int = 2000
     drift_min_count: int = 200
@@ -24,6 +26,7 @@ class Settings:
     max_batch: int = 32
     max_wait_ms: float = 4.0
     feedback_window: int = 2000  # study-level (label, probability) pairs for live metrics
+    feedback_token: str = ""  # if set, /v1/feedback requires it in the x-feedback-token header
     log_level: str = "INFO"
 
     @classmethod

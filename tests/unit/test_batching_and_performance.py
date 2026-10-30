@@ -127,3 +127,24 @@ def test_api_feedback_loop(make_client):
     assert 'brainct_feedback_total{result="joined"} 1.0' in metrics
     assert 'brainct_live_metric{label="any",metric="count"} 1.0' in metrics
     assert "brainct_batch_slices_bucket" in metrics
+
+
+def test_batcher_stop_fails_pending_requests():
+    async def main():
+        def slow(x):
+            import time
+
+            time.sleep(0.2)
+            return x.reshape(len(x), -1)[:, :6], x.reshape(len(x), -1)[:, :3]
+
+        b = MicroBatcher(slow, max_batch=2, max_wait_ms=1)
+        await b.start()
+        tasks = [
+            asyncio.create_task(b.submit(np.zeros((2, 1, 4, 4), np.float32))) for _ in range(3)
+        ]
+        await asyncio.sleep(0.05)
+        await b.stop()
+        results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 2)
+        assert any(isinstance(r, RuntimeError) for r in results)
+
+    asyncio.run(main())

@@ -117,23 +117,25 @@ fires on PSI > 0.2 for 10 minutes.
 - Helm chart: HPA on CPU (scale up fast, down slowly), PodDisruptionBudget, startup /
   readiness / liveness probes on different endpoints, NetworkPolicy (ingress on 8000 only,
   no egress), no service-account token.
-- CI deploys the chart to a kind cluster on every push and runs a real series request through
-  the Service, then a rolling restart. The reference project deployed to GKE by hand; this
-  repository targets kind/any cluster and verifies the deployment automatically, at no cost.
-  No managed-cloud deployment was run for this version.
+- CI deploys the chart to a kind cluster on every push (the same image Trivy scanned), runs a
+  real series request through the Service, keeps in-cluster traffic on it through a rolling
+  restart (any non-200 fails), and checks that Prometheus scrapes the pods and loads the rules.
+- The same chart was deployed to GKE Autopilot provisioned by `infra/terraform`, load-tested
+  in-cluster and destroyed (`docs/results.md`; that run used the laptop ResNet-18 bundle).
 
 ## Incident: INT8 diverged on the GKE CPU (found by the cloud e2e check)
 
 **What happened.** The bundle certified on the Apple M4 (ARM) was deployed to GKE Autopilot.
 `scripts/e2e_real_series.py` uploads real held-out series and compares served probabilities
 with the certified offline ones: on kind (ARM) they matched within 5e-6; on GKE they differed
-by up to **0.56**. The node was an AMD EPYC 7B13 (Milan): AVX2, no VNNI.
+by up to **0.56** (both from the console output of those runs, which was not kept; the fixed
+GKE run is in `docs/evidence/gke/e2e_real_series.json`). The node was an AMD EPYC 7B13 (Milan): AVX2, no VNNI.
 
 **Why.** Static INT8 with signed weights runs ONNX Runtime's u8×s8 kernel. Without VNNI, x86
 computes those products with saturating 16-bit intermediates; large activations overflow.
 ARM (and x86 with VNNI) do not have this path, so local tests could not see it.
 
-**What was tried** (`scripts/quant_variants.py`, results in `docs/evidence/`):
+**What was tried** (`scripts/quant_variants.py`; `docs/evidence/quant_variants_arm_apple_m4.json`, `quant_variants_x86_epyc_milan.json`, `int8_reduce_range_rejected.log`):
 
 | Weights | Phantom mean err ARM | Phantom mean err x86 (EPYC) | Real val mean err (ARM) | Deployed chain macro AUC |
 |---|---|---|---|---|
@@ -168,3 +170,68 @@ per run directory. The 2D experiment history was recovered from the run logs
 A tracking server (or a database that supports concurrent writers) is the production answer.
 The model card now also records the git commit of cloud runs (`BRAINCT_GIT_SHA` baked into the
 Modal image, which ships no `.git`).
+
+## Audit (2026-10): what an independent review found, and what changed
+
+Four read-only reviews (ML pipeline, service, infrastructure/CI, docs vs evidence) were run
+against the repository. Every finding below was reproduced before it was fixed; each fix has a
+regression test or CI check.
+
+**Service.**
+- Upload limits were checked only after Starlette had buffered the whole multipart body
+  (263 MB parsed before a 413). A streaming body cap (`BodyLimit`, `BRAINCT_MAX_REQUEST_MB`)
+  now rejects it as it arrives.
+- The per-request size counted *compressed* zip bytes (three 1.4 KB zips unpacked to 2.9 MB
+  against a 1 MB limit); zip members skipped the per-file limit; a 512 KB compressed DICOM
+  decoded to +162 MB. Totals are now uncompressed, each zip member obeys the file limit, and
+  Rows / Columns / frames are checked before pixel data is decoded (64–1024 px, one frame).
+- Malformed inputs (an 8×8 slice, empty or malformed tags) raised uncaught exceptions: 500s
+  that the request counter never saw, so the 5xx alert could not fire. They are now 422s,
+  and the middleware counts and tags any unhandled error as a 500.
+- Clients chose the request id that keys `/v1/feedback`, so two requests could overwrite
+  each other. Ids are server-generated; feedback can require a token.
+- A bundle without a series model reported ready and failed every series request; it now
+  serves the CNN head. A failed INT8 self-test without an FP32 model, or `precision=fp32`
+  without one, now fails readiness instead of serving uncertified numbers. The model card
+  (calibration, thresholds) is checksummed like the model files.
+- Decoding is bounded (`BRAINCT_MAX_DECODES`), CPU work left the event loop, the series model
+  runs under the concurrency gate, shutdown fails pending requests instead of hanging them,
+  slice-endpoint probabilities no longer pollute the prediction-drift window, and live
+  metrics that become undefined are dropped instead of going stale.
+
+**Model and evaluation.**
+- Study-level decisions used per-slice thresholds on the series max, so the subtype calls
+  and the screening flag the API returns had never been scored. Thresholds are now fit at
+  study level on validation and the study-level operating points are reported on test.
+- Platt scaling was plain Newton and could diverge silently (a ≈ 600, b ≈ −1e10 on
+  over-confident logits). It now uses a line search and raises if it does not converge.
+- The FP32 fallback reused the INT8 calibration; it now has its own fits.
+- DDP could deadlock when the epoch did not split evenly (one rank one batch more); every rank
+  now gets the same number of batches (`docs/evidence/ddp_gloo_2proc_uneven.log`).
+- Smaller: typed `--set` overrides (`lr=1e-3` was a string), per-worker RNG for context
+  dropout, no empty split in tiny strata (existing splits unchanged, checked byte for byte),
+  an ingest crash can no longer orphan a series, series-model ONNX parity is checked,
+  checkpoints and the MLflow store are written atomically.
+
+**Infrastructure and CI.**
+- No alert fired for a total outage: `BrainCTModelNotLoaded` needed 2 minutes of a pod the
+  startup probe killed after 120 s. The startup probe now checks liveness (a pod that failed
+  to load stays up and unready) and `BrainCTServiceDown` (`absent(...)`) plus
+  `BrainCTTargetDown` cover the rest; the inhibit rule is scoped to the outage alert.
+- The registry cleanup policy deleted nothing (KEEP only); tags were mutable with
+  `IfNotPresent`. Now DELETE + KEEP policies and immutable tags. The single-replica PDB
+  blocked drains (`maxUnavailable: 1` now). Cloud Build runs as its own service account; the
+  control plane can be restricted to given CIDRs.
+- CI: actions pinned by SHA (Dependabot keeps them current), base image pinned by digest,
+  Trivy fails on HIGH as well as CRITICAL, kind deploys the image that was scanned, the
+  rolling-restart step sends in-cluster traffic and fails on any non-200, and Prometheus must
+  scrape the pods and load the rules (`promtool` / `amtool` validate them first). Grafana's
+  admin password comes from a Secret.
+- Evidence files no longer carry the GCP project id, node IPs, the Modal workspace or local
+  paths (git history still does).
+
+**Docs.** The GKE run never had a 4th *ready* pod (the docs said 1 → 4); "macro AUC" here
+averaged six labels while the reference averages five subtypes (both are now reported);
+several stale numbers from the laptop model were corrected; the comparison now credits the
+reference with what it did measure (CPU-dependent INT8 accuracy, 420 tests, micro-batching
+gain, served = offline test).

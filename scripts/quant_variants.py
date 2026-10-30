@@ -1,6 +1,7 @@
 """Compare INT8 quantization schemes against FP32 on this machine's CPU.
 
-    uv run python scripts/quant_variants.py build artifacts/runs/cnn2d_resnet18 artifacts/qv
+    uv run python scripts/quant_variants.py build artifacts/runs/cnn2d_resnet18 artifacts/qv \
+        [artifacts/bundle.work]   # export work dir of that run (holds cnn.prep.onnx)
     python scripts/quant_variants.py check artifacts/qv        # any machine with onnxruntime
 
 `build` quantizes the prepared FP32 CNN four ways (calibrated on the same training slices).
@@ -42,7 +43,7 @@ def build(run: Path, out: Path) -> None:
     from brainct.training.data import load_series, read_volume
 
     out.mkdir(parents=True, exist_ok=True)
-    work = Path("artifacts/bundle.work")
+    work = Path(sys.argv[4]) if len(sys.argv) > 4 else Path("artifacts/bundle.work")
     prep = work / "cnn.prep.onnx"
     cfg = json.loads((run / "config.json").read_text())
     train = load_series(Path(cfg["data_dir"]), "train")

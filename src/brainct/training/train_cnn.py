@@ -37,12 +37,20 @@ from brainct.training.common import (
     augment,
     cosine_lr,
     device,
+    save_atomic,
     save_predictions,
     seed_everything,
     weighted_bce,
 )
 from brainct.training.config import TrainConfig
-from brainct.training.data import Series, SliceDataset, balanced_epoch, load_series, read_volume
+from brainct.training.data import (
+    Series,
+    SliceDataset,
+    balanced_epoch,
+    load_series,
+    read_volume,
+    seed_worker,
+)
 from brainct.training.model import SliceNet
 
 
@@ -209,7 +217,11 @@ def main(argv: list[str] | None = None) -> None:
 
         for epoch in range(start_epoch, cfg.epochs if not args.skip_train else 0):
             model.train()
-            idx = balanced_epoch(labels_any, cfg.neg_ratio, rng)[:per_epoch][rank::world]
+            # Same length on every rank: unequal batch counts would leave one rank waiting in
+            # all-reduce while another waits at the barrier (a hang). The cut only drops what
+            # drop_last would have dropped anyway.
+            used = steps_per_epoch * cfg.batch_size * world
+            idx = balanced_epoch(labels_any, cfg.neg_ratio, rng)[:used][rank::world]
             loader = DataLoader(
                 Subset(train_ds, idx.tolist()),
                 batch_size=cfg.batch_size,
@@ -217,6 +229,8 @@ def main(argv: list[str] | None = None) -> None:
                 drop_last=True,
                 num_workers=cfg.num_workers,
                 persistent_workers=False,
+                worker_init_fn=seed_worker,
+                generator=torch.Generator().manual_seed(cfg.seed * 1000 + epoch * world + rank),
                 pin_memory=cuda,
                 prefetch_factor=4 if cfg.num_workers else None,
             )
@@ -259,7 +273,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"epoch {epoch}: " + json.dumps({k: round(v, 4) for k, v in metrics.items()}))
             if metrics["auc_mean"] > best:
                 best = metrics["auc_mean"]
-                torch.save(
+                save_atomic(
                     {
                         "model": net.state_dict(),
                         "config": cfg.to_dict(),
@@ -268,7 +282,7 @@ def main(argv: list[str] | None = None) -> None:
                     },
                     run_dir / "best.pt",
                 )
-            torch.save(
+            save_atomic(
                 {
                     "model": net.state_dict(),
                     "opt": opt.state_dict(),

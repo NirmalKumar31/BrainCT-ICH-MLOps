@@ -104,7 +104,7 @@ def test_read_dicom_z_follows_slice_normal():
 
     from pydicom import dcmread
 
-    raw = make_ct(phantom(32), z=3.0)
+    raw = make_ct(phantom(64), z=3.0)
     ds = dcmread(io.BytesIO(raw))
     ds.ImageOrientationPatient = [1, 0, 0, 0, 0, -1]  # coronal: normal is +y
     ds.ImagePositionPatient = [0.0, 42.0, 3.0]

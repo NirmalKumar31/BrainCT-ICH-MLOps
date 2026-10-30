@@ -1,0 +1,24 @@
+<local-path> Research Engine/BrainCT-ICH-MLOps/src/brainct/optimization/export.py:52: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+<local-path> Research Engine/BrainCT-ICH-MLOps/src/brainct/optimization/export.py:67: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+  return _generic_rnn(
+WARNING:root:Quantized bias `onnx::Conv_235` exceeds the range of a int32. The bias scale is too small.
+<local-path> Research Engine/BrainCT-ICH-MLOps/src/brainct/metrics.py:138: RuntimeWarning: overflow encountered in exp
+  return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=np.float64)))
+ONNX FP32 vs PyTorch max |logit diff| = 1.62e-05
+Collecting tensor data and making histogram ...
+Finding optimal threshold for each tensor using 'percentile' algorithm ...
+Number of tensors : 54
+Number of histogram bins : 2048
+Percentile : (0.010000000000005116,99.99)
+quantized in 51 s; FP32 nodes kept: ['/windowing/Clip', '/windowing/Concat', '/windowing/Div', '/windowing/Div_1', '/windowing/Gather', '/windowing/Gather_1', '/windowing/Gather_2', '/windowing/Gather_3', '/windowing/Mul', '/windowing/Reshape', '/windowing/Shape_3', '/windowing/Sub', '/windowing/Sub_1', '/windowing/Unsqueeze', '/windowing/Unsqueeze_1', '/windowing/Unsqueeze_2', '/windowing/Unsqueeze_3', '/windowing/Unsqueeze_4']
+fp32: chain on val+test in 578 s
+int8: chain on val+test in 167 s
+self-test on build machine: INT8 vs FP32 max prob diff 0.1605
+fp32/cnn: macro AUC 0.9025  wlogloss 0.1335  study AUC 0.9531
+fp32/seq: macro AUC 0.9198  wlogloss 0.1217  study AUC 0.9531
+int8/cnn: macro AUC 0.9037  wlogloss 0.1345  study AUC 0.9469
+int8/seq: macro AUC 0.8430  wlogloss 2.2128  study AUC 0.9455
+sizes MB: {'cnn.fp32.onnx': 44.7, 'cnn.int8.onnx': 11.3}
+bundle written to artifacts/bundle

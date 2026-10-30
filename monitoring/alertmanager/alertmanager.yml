@@ -13,6 +13,7 @@ receivers:
   - name: default
   - name: oncall
 inhibit_rules:
-  # A pod without a model makes every other alert noise.
-  - source_matchers: [alertname="BrainCTModelNotLoaded"]
+  # With the whole service down, drift / latency / scrape warnings are noise. Scoped to the
+  # outage alert only: a single unready pod must not mute warnings about the others.
+  - source_matchers: [alertname="BrainCTServiceDown"]
     target_matchers: [severity="warning"]

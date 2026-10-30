@@ -1,7 +1,7 @@
 # Results
 
 Every number here was measured in this repository (2026-10-29) on Modal (A100-40GB training,
-48-vCPU x86 export), an Apple M4 laptop (10-core CPU, 16 GB), GitHub Actions, and GKE Autopilot
+32-vCPU x86 export), an Apple M4 laptop (10-core CPU, 16 GB), GitHub Actions, and GKE Autopilot
 (us-central1). How each number was produced is stated next to it; raw proof is in
 [`evidence/`](evidence/README.md).
 
@@ -21,7 +21,7 @@ Logs: [`evidence/modal/`](evidence/modal/).
 |---|---|---|
 | Ingest: whole 144 GB tar → HU cache, 32 range regions | 16 vCPU | 753 s; 21,744 series / 752,802 slices (29 partial series dropped) |
 | Split, patient-level 70/15/15, seed 2026 | | 13,256 / 2,841 / 2,841 patients |
-| CNN, ResNet-50, 6 epochs, batch 128, bf16, channels-last | A100-40GB | ~1,500–1,640 img/s; ~30 min per model |
+| CNN, ResNet-50, 6 epochs, batch 128, bf16, channels-last | A100-40GB | 2D ~1,550–1,640 img/s, 2.5D ~1,380–1,470 img/s; 6 epochs ≈ 11 min of training + ~4 min staging + ~3 min predictions per model |
 | Series model, export, INT8, certification, benchmark | 32 vCPU x86 | ~1 h (chain inference on val + test, FP32 and INT8) |
 
 Test set: 2,841 patients, 3,231 series, 111,941 slices (16,050 hemorrhage slices; 1,327
@@ -37,12 +37,15 @@ are fit on validation; test is scored once.
 | 2.5D CNN | 0.973 (0.969–0.976) | 0.077 (0.073–0.081) | 0.977 (0.972–0.983) | 0.960 | 0.962 | 0.961 |
 | 2.5D CNN + series model | 0.979 (0.975–0.982) | 0.068 (0.064–0.072) | 0.978 (0.973–0.984) | 0.964 | 0.975 | 0.973 |
 
-The series model adds +0.009 macro AUC and cuts weighted log loss by 17%, most on
+The series model adds +0.009 macro AUC and cuts weighted log loss by 16%, most on
 subarachnoid (+0.018) and subdural (+0.013). With 10× the data the CIs no longer overlap: the
 2D + series-model CI (0.979–0.984) lies entirely above the single-slice CNN (0.969–0.975).
 2.5D input still does not help, and on top of a series model it slightly hurts: the series
-model already sees neighbouring slices. The reference project reports macro AUC 0.977 for a
-single-slice ResNet-50 on all of RSNA (its own patient split, so the test sets differ).
+model already sees neighbouring slices. The reference project reports a 5-subtype macro AUC
+of 0.977 (0.973–0.980) for a single-slice ResNet-50 on all of RSNA; the deployed chain here
+scores 0.981 (0.977–0.984) on the same definition, the single-slice CNN 0.972. The test sets
+are different patient splits and the CIs overlap, so this is "comparable or slightly better",
+not a measured win.
 
 ![Full-data training curves](evidence/modal_full_data_training_curves.png)
 
@@ -51,10 +54,14 @@ single-slice ResNet-50 on all of RSNA (its own patient split, so the test sets d
 Certified on Modal's x86 CPU; ONNX parity vs PyTorch 2.1e-5. Full report:
 [`evidence/full_data_certification.json`](evidence/full_data_certification.json).
 
-| Precision | Macro AUC (95% CI) | Weighted log loss (95% CI) | Study AUC (any) | CNN file |
-|---|---|---|---|---|
-| FP32 ONNX | 0.982 (0.979–0.984) | 0.065 (0.061–0.070) | 0.979 | 94.0 MB |
-| **INT8 ONNX, uint8 weights (deployed)** | **0.981 (0.978–0.984)** | **0.066 (0.062–0.071)** | **0.978 (0.973–0.983)** | **24.1 MB** |
+"Macro AUC" averages the six labels; "subtype macro" averages the five subtypes, the
+reference project's definition.
+
+| Precision | Macro AUC (95% CI) | Subtype macro AUC (95% CI) | Weighted log loss (95% CI) | Study AUC (any) | CNN file |
+|---|---|---|---|---|---|
+| FP32 ONNX | 0.982 (0.979–0.984) | 0.982 (0.978–0.984) | 0.065 (0.061–0.070) | 0.979 | 94.0 MB |
+| **INT8 ONNX, uint8 weights (deployed)** | **0.981 (0.978–0.984)** | **0.981 (0.977–0.984)** | **0.066 (0.062–0.071)** | **0.978 (0.973–0.983)** | **24.1 MB** |
+| INT8 single-slice CNN alone | 0.971 (0.967–0.974) | 0.970 (0.966–0.973) | 0.080 | 0.975 | |
 
 Per label, deployed chain, test (slice level, thresholds F1-optimal on validation):
 
@@ -70,7 +77,22 @@ Per label, deployed chain, test (slice level, thresholds F1-optimal on validatio
 | Operating point for "any" (chosen on validation) | Level | Sensitivity | Specificity | PPV |
 |---|---|---|---|---|
 | Screening (≥95% sensitivity on validation) | slice | 0.953 | 0.925 | 0.680 |
-| F1-optimal | study (max over slices) | 0.923 | 0.947 | 0.925 |
+| Screening (≥95% sensitivity on validation), the API's `screening_positive` | study | 0.956 | 0.907 | 0.878 |
+| F1-optimal, the API's `hemorrhage` | study (max over slices) | 0.923 | 0.947 | 0.925 |
+
+Study-level subtype calls (the API's `subtypes`), thresholds F1-optimal at study level on
+validation, test series (3,231):
+
+| Subtype | Positive series | Study AUC | Sensitivity | Specificity | PPV |
+|---|---|---|---|---|---|
+| epidural | 51 | 0.913 | 0.471 | 0.979 | 0.267 |
+| intraparenchymal | 805 | 0.973 | 0.847 | 0.965 | 0.890 |
+| intraventricular | 554 | 0.983 | 0.823 | 0.978 | 0.885 |
+| subarachnoid | 563 | 0.947 | 0.785 | 0.932 | 0.708 |
+| subdural | 555 | 0.952 | 0.807 | 0.933 | 0.715 |
+
+Until the audit these study-level decisions used per-slice thresholds and had never been
+scored; they are now fit and certified at the level the API applies them.
 
 ![ROC](figures/full/roc_test.png) ![Calibration](figures/full/calibration_test.png)
 
@@ -127,7 +149,7 @@ resample patients (1,000×). Training curves: [`evidence/mlflow_training_curves.
 | Model | Macro AUC (95% CI) | Weighted log loss (95% CI) | Study AUC, any (95% CI) | SAH AUC | SDH AUC |
 |---|---|---|---|---|---|
 | Single-slice CNN (reference project's input) | 0.902 (0.844–0.940) | 0.133 (0.108–0.165) | 0.953 (0.926–0.975) | 0.907 | 0.916 |
-| **Single-slice CNN + series model (deployed)** | **0.920 (0.858–0.956)** | **0.122 (0.097–0.152)** | 0.953 (0.925–0.975) | **0.932** | **0.939** |
+| **Single-slice CNN + series model (deployed then)** | **0.920 (0.858–0.956)** | **0.122 (0.097–0.152)** | 0.953 (0.925–0.975) | **0.932** | **0.939** |
 | 2.5D CNN | 0.897 (0.841–0.934) | 0.142 (0.114–0.176) | 0.944 (0.915–0.967) | 0.892 | 0.897 |
 | 2.5D CNN + series model | 0.915 (0.856–0.951) | 0.128 (0.102–0.159) | 0.946 (0.919–0.968) | 0.917 | 0.936 |
 
@@ -143,8 +165,8 @@ deployed chain runs through `serving.model.InferenceModel` on validation (fit) a
 | Precision | Macro AUC (95% CI) | Weighted log loss | Study AUC (any) | CNN file |
 |---|---|---|---|---|
 | FP32 ONNX | 0.920 | 0.122 | 0.953 | 44.7 MB |
-| **INT8 ONNX, uint8 weights (deployed)** | **0.920 (0.855–0.957)** | **0.123 (0.099–0.153)** | **0.949 (0.919–0.971)** | **11.3 MB** |
-| INT8, int8 weights + reduce_range (rejected) | 0.843 | 2.213 | 0.946 | 11.3 MB |
+| **INT8 ONNX, uint8 weights (deployed then)** | **0.920 (0.855–0.957)** | **0.123 (0.099–0.153)** | **0.949 (0.919–0.971)** | **11.3 MB** |
+| INT8, int8 weights + reduce_range (rejected; [log](evidence/int8_reduce_range_rejected.log)) | 0.843 | 2.213 | 0.946 | 11.3 MB |
 
 Per label, deployed chain, test (slice level, thresholds F1-optimal on validation):
 
@@ -176,13 +198,14 @@ in batches of 16, then the series model.
 | **ONNX Runtime INT8 (uint8 weights)** | **8.2 / 8.6 ms** | **331 / 399 ms** |
 
 INT8 is 2.0× faster than FP32 ONNX and 3.1× faster than PyTorch per series. The first INT8
-build (int8 weights) was faster on ARM (257 ms) but numerically wrong on x86 without VNNI (see
+build (int8 weights) was faster on ARM (257 ms; console output, not kept) but numerically wrong on x86 without VNNI (see
 the incident below); uint8 weights trade ~30% ARM speed for identical behaviour on every CPU.
 
 ## Kubernetes, local (kind on a 4-vCPU Colima VM)
 
 - **Serving = evaluation:** 60 real held-out series uploaded as shuffled DICOMs through the
-  Service matched the offline certified probabilities within **5.0e-6** (same CPU family).
+  Service matched the offline certified probabilities within **5.0e-6** (same CPU family;
+  console output, not kept).
 - **Autoscaling** (in-cluster Job, 32-slice series): HPA 1 → 3 pods in 31 s; 2.17 → 3.12
   series/s; 0 errors up to 8 clients. Ceiling = the VM's 4 vCPUs
   ([`evidence/kind_load_steps.md`](evidence/kind_load_steps.md)).
@@ -205,11 +228,12 @@ deployment did *not* pass this check (max |Δp| 0.56): see the incident below.
 | 2 | 2.00 | 797 | 2,002 | 0 | 2 → 3 |
 | 4 | 2.52 | 1,273 | 3,566 | 0 | 3 |
 | 8 | 2.57 | 1,406 | 8,528 | 0 | 3 (HPA wants 4) |
-| 12 | 3.08 | 2,086 | 10,609 | 0 | 3 → 4 |
-| 16 | 2.65 | 1,487 | 16,448 | 0 | 4 |
+| 12 | 3.08 | 2,086 | 10,609 | 0 | 3 (HPA wants 4) |
+| 16 | 2.65 | 1,487 | 16,448 | 0 | 3 (HPA wants 4) |
 
-HPA asked for a 2nd and 3rd pod within 50 s (ready by 150 s); the 4th pod took ~4–5 minutes
-because Autopilot had to add capacity. One 2-vCPU EPYC pod serves ~1.4 series/s (slower than
+HPA asked for a 2nd and 3rd pod within 50 s (ready by 150 s) and for a 4th at ~266 s; Autopilot
+was still adding capacity for it when the test ended at 562 s, so the 12- and 16-client steps
+ran on 3 pods (the timeline never shows a 4th ready pod). One 2-vCPU EPYC pod serves ~1.4 series/s (slower than
 the M4). Past ~3 series/s the extra clients only queue: p95 grows, nothing fails. Timeline:
 [`evidence/gke/hpa_timeline.txt`](evidence/gke/hpa_timeline.txt).
 
@@ -223,8 +247,8 @@ Alertmanager (6 alert instances). `BrainCTLiveQualityDrop` stayed inactive.
 posted to `/v1/feedback`; the service's live study AUC for "any" was **0.959** (40 positive),
 equal to the offline AUC of the same series
 ([`evidence/gke/live_performance_feedback.json`](evidence/gke/live_performance_feedback.json)).
-Study-level ECE was 0.08–0.12: calibration is fit per slice, and the max over a series is not
-re-calibrated (see limitations).
+Study-level ECE was 0.08–0.12 (ResNet-18 bundle): calibration is fit per slice, and the max
+over a series is not re-calibrated (see limitations).
 
 ## Multi-GPU training path
 
@@ -234,7 +258,10 @@ re-calibrated (see limitations).
 
 ## CI (GitHub Actions, every push)
 
-Lint, format, mypy, the service-side tests with an 85% coverage gate (94% measured; 89 tests
-locally including PyTorch and trained-bundle release tests), lockfile/requirements drift check;
-image build, Trivy scan, no-PyTorch and non-root assertions, read-only-root smoke test; kind +
-Helm end-to-end with a rolling restart and monitoring manifests; Terraform fmt/validate/tflint.
+Actions pinned by commit SHA. Lint, format, mypy, the service-side tests with an 85% coverage
+gate (94% measured; 107 tests locally including PyTorch and trained-bundle release tests),
+lockfile/requirements drift check; image build (base pinned by digest), Trivy (fixable HIGH
+and CRITICAL fail the build), no-PyTorch and non-root assertions, read-only-root smoke test;
+kind + Helm end-to-end on that same scanned image: a series through the Service, a rolling
+restart under in-cluster traffic (any non-200 fails), `promtool` / `amtool` checks, and
+Prometheus scraping the pods with the rules loaded; Terraform fmt/validate/tflint.

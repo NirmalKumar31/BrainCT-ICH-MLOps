@@ -124,6 +124,19 @@ class SliceDataset(Dataset):
         )
 
 
+def seed_worker(worker_id: int) -> None:
+    """DataLoader worker_init_fn: workers fork the dataset with the parent's numpy RNG, so
+    every worker (and every epoch, with non-persistent workers) would draw the same context
+    dropout. Reseed each from its torch seed, which differs per worker and per epoch."""
+    info = torch.utils.data.get_worker_info()
+    if info is None:
+        return
+    ds = info.dataset
+    ds = getattr(ds, "dataset", ds)  # unwrap Subset
+    if hasattr(ds, "rng"):
+        ds.rng = np.random.default_rng(info.seed % 2**32)
+
+
 def balanced_epoch(labels_any: np.ndarray, neg_ratio: float, rng: np.random.Generator):
     """All positive slices + neg_ratio x as many random negatives, shuffled."""
     pos = np.nonzero(labels_any > 0)[0]

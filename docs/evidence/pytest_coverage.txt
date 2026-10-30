@@ -1,21 +1,20 @@
-........................................................................ [ 80%]
-.................                                                        [100%]
+........................................................................ [ 67%]
+...................................                                      [100%]
 ================================ tests coverage ================================
 ______________ coverage: platform darwin, python 3.12.13-final-0 _______________
 
 Name                                 Stmts   Miss  Cover   Missing
 ------------------------------------------------------------------
-src/brainct/data/ingest.py             207     45    78%   47, 52-53, 77, 89, 93, 115, 117, 121-122, 141-144, 204-206, 231, 247-295, 299
-src/brainct/data/split.py               61      1    98%   93
-src/brainct/evaluation.py               88      1    99%   189
-src/brainct/metrics.py                 109      2    98%   92, 132
-src/brainct/preprocessing/dicom.py      49      4    92%   55, 65-66, 68
-src/brainct/serving/app.py             271      4    99%   120, 468, 470, 524
-src/brainct/serving/batching.py         74      5    93%   71, 77-80
-src/brainct/serving/model.py           119      6    95%   73-74, 95, 132, 155, 173
-src/brainct/serving/series.py           71      3    96%   47, 78, 92
+src/brainct/data/ingest.py             224     45    80%   47, 52-53, 77, 89, 93, 115, 117, 121-122, 141-144, 226-228, 254, 270-318, 322
+src/brainct/data/split.py               74      1    99%   111
+src/brainct/evaluation.py               96      1    99%   218
+src/brainct/metrics.py                 124      4    97%   92, 132, 180, 187
+src/brainct/preprocessing/dicom.py      77     13    83%   31-32, 74-76, 86-87, 89, 92, 98, 101-102, 104
+src/brainct/serving/app.py             324      6    98%   139, 175, 329, 570, 572, 627
+src/brainct/serving/batching.py         87      5    94%   85, 91-94
+src/brainct/serving/model.py           140      7    95%   77-78, 100, 104, 121, 153, 203
+src/brainct/serving/series.py           94      6    94%   61-63, 65, 111, 113, 130
 ------------------------------------------------------------------
-TOTAL                                 1276     71    94%
+TOTAL                                 1470     88    94%
 
 11 files skipped due to complete coverage.
-89 passed in 19.19s

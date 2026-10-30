@@ -138,15 +138,28 @@ def sigmoid(x: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.asarray(x, dtype=np.float64)))
 
 
-def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, l2: float = 1e-3):
+def _platt_loss(z: np.ndarray, y: np.ndarray, a: float, b: float, l2: float) -> float:
+    t = a * z + b
+    # log(1 + e^t) - y*t, overflow-safe
+    return float(np.mean(np.logaddexp(0.0, t) - y * t) + 0.5 * l2 * (a - 1) ** 2)
+
+
+def fit_platt(
+    z: np.ndarray, y: np.ndarray, iters: int = 100, l2: float = 1e-3, tol: float = 1e-9
+) -> tuple[float, float]:
     """Platt scaling p = sigmoid(a*z + b), fit by Newton's method on log loss.
 
     Needed because balanced sampling trains the CNN on ~44% positives while only ~14% of slices
     are positive: ranking (AUC) is unaffected, raw probabilities are not.
+
+    Plain Newton from (1, 0) overshoots when the logits are badly over-confident (a << 1) and
+    can run away to a ~ 600, b ~ -1e10; every step here is halved until the loss decreases,
+    and a fit that does not converge raises instead of returning garbage.
     """
     z = np.asarray(z, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
     a, b = 1.0, 0.0
+    loss = _platt_loss(z, y, a, b, l2)
     for _ in range(iters):
         p = sigmoid(a * z + b)
         r = p - y
@@ -156,7 +169,20 @@ def fit_platt(z: np.ndarray, y: np.ndarray, iters: int = 50, l2: float = 1e-3):
             [[np.mean(w * z * z) + l2, np.mean(w * z)], [np.mean(w * z), np.mean(w) + 1e-12]]
         )
         step = np.linalg.solve(h, g)
-        a, b = a - step[0], b - step[1]
-        if np.abs(step).max() < 1e-8:
+        t = 1.0
+        while t > 1e-10:
+            na, nb = a - t * step[0], b - t * step[1]
+            new = _platt_loss(z, y, na, nb, l2)
+            if np.isfinite(new) and new <= loss + 1e-12:
+                break
+            t /= 2
+        else:
+            break  # no descent possible: at the optimum to numerical precision
+        a, b, prev, loss = na, nb, loss, new
+        if prev - loss < tol and np.abs(t * step).max() < 1e-6:
             break
+    gnorm = np.abs(np.array([np.mean((sigmoid(a * z + b) - y) * z) + l2 * (a - 1),
+                             np.mean(sigmoid(a * z + b) - y)])).max()  # fmt: skip
+    if not (np.isfinite(a) and np.isfinite(b)) or gnorm > 1e-4:
+        raise ValueError(f"Platt fit did not converge (a={a:.3g}, b={b:.3g}, |grad|={gnorm:.2g})")
     return float(a), float(b)

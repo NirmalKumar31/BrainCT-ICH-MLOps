@@ -186,3 +186,13 @@ def test_split_cli(tmp_path, capsys):
     assert all(out[s]["subdural"] > 0 for s in ("train", "val", "test"))
     rows = (tmp_path / "splits.csv").read_text().splitlines()
     assert rows[0] == "series_id,patient_id,split" and len(rows) == 41
+
+
+def test_split_never_leaves_a_split_empty():
+    from collections import Counter
+
+    from brainct.data.split import split_patients
+
+    for n in (3, 4, 5, 7):
+        counts = Counter(split_patients({f"p{i}": "epidural" for i in range(n)}).values())
+        assert set(counts) == {"train", "val", "test"}, (n, counts)

@@ -64,7 +64,7 @@
     },
     {
       "type": "stat",
-      "title": "5xx rate",
+      "title": "5xx rate (API endpoints)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -77,7 +77,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(brainct_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(brainct_requests_total[5m])), 1e-9)",
+          "expr": "sum(rate(brainct_requests_total{endpoint=~\"/v1/.*\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(brainct_requests_total{endpoint=~\"/v1/.*\"}[5m])), 1e-9)",
           "refId": "A"
         }
       ],

@@ -93,3 +93,20 @@ def test_balanced_epoch():
     idx = balanced_epoch(labels, 1.5, np.random.default_rng(0))
     assert sorted(set(idx) & {0, 5}) == [0, 5]
     assert len(idx) == 5 and len(set(idx)) == 5
+
+
+def test_config_overrides_are_typed():
+    from brainct.training.config import TrainConfig
+
+    cfg = TrainConfig.load(None, ["lr=1e-3", "seq_feature_noise=5e-1", "epochs=3"])
+    assert cfg.lr == 1e-3 and isinstance(cfg.lr, float)
+    assert cfg.seq_feature_noise == 0.5 and cfg.epochs == 3
+    with pytest.raises(ValueError, match="lr"):
+        TrainConfig.load(None, ["lr=fast"])
+
+
+def test_save_atomic_leaves_no_partial_file(tmp_path):
+    from brainct.training.common import save_atomic
+
+    save_atomic({"a": torch.zeros(3)}, tmp_path / "last.pt")
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["last.pt"]

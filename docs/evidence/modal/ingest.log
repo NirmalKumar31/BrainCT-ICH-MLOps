@@ -1,10 +1,10 @@
-warning: `VIRTUAL_ENV=/Users/nirmalkumar/.pyenv/versions/3.12.3` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+warning: `VIRTUAL_ENV=<local-path> does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
 ✓ Initialized. View run at 
-https://modal.com/apps/nirmalkumar31/main/ap-IybptrDOk2eFRJkSeJxCmZ
+https://modal.com/apps/<modal-workspace>/main/ap-IybptrDOk2eFRJkSeJxCmZ
 ✓ Created objects.
-├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+├── ✓ Uploaded <local-path> Research 
 │   Engine/BrainCT-ICH-MLOps/cloud/modal_pipeline.py
-├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+├── ✓ Uploaded <local-path> Research 
 │   Engine/BrainCT-ICH-MLOps/configs
 ├── ✓ Uploaded PythonPackage:brainct
 ├── ✓ Created Function ingest.
@@ -72,4 +72,4 @@ https://modal.com/apps/nirmalkumar31/main/ap-IybptrDOk2eFRJkSeJxCmZ
 }
 [modal-client] 2026-10-29T17:40:02-0600 Timed out waiting for final app logs.
 ✓ App completed. View run at 
-https://modal.com/apps/nirmalkumar31/main/ap-IybptrDOk2eFRJkSeJxCmZ
+https://modal.com/apps/<modal-workspace>/main/ap-IybptrDOk2eFRJkSeJxCmZ
