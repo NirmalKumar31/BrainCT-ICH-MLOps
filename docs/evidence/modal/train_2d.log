@@ -1,0 +1,98 @@
+warning: `VIRTUAL_ENV=/Users/nirmalkumar/.pyenv/versions/3.12.3` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+✓ Initialized. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-4nwwXXAwcEVpTx7dq1vlEi
+✓ Created objects.
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/cloud/modal_pipeline.py
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/configs
+├── ✓ Uploaded PythonPackage:brainct
+├── ✓ Created Function ingest.
+├── ✓ Created Function train.
+└── ✓ Created Function finish.
+staged 21744 series to local disk in 262 s
++ nvidia-smi
+Thu Oct 29 23:44:30 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 610.57.04              KMD Version: 610.57.04     CUDA UMD Version: 13.3     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A100-SXM4-40GB          On  |   00000000:0F:00.0 Off |                    0 |
+| N/A   42C    P0             60W /  400W |       4MiB /  40960MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
++ /usr/local/bin/python -m brainct.training.train_cnn --config /app/configs/full_resnet50_2d.yaml --set data_dir=/local/rsna out_dir=/runs
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026/10/29 23:44:59 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git SHA is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/29 23:44:59 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git branch is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/29 23:44:59 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git repository URL is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+epoch 0 step 0/1333 loss 0.6814 14 img/s
+epoch 0 step 1000/1333 loss 0.1957 1508 img/s
+epoch 0: {"auc_any": 0.964, "auc_epidural": 0.9265, "auc_intraparenchymal": 0.9722, "auc_intraventricular": 0.9862, "auc_subarachnoid": 0.9363, "auc_subdural": 0.9475, "auc_mean": 0.9555, "wlogloss_uncalibrated": 0.1393, "epoch_seconds": 110.1403, "img_per_s": 1549.1514}
+epoch 1 step 0/1333 loss 0.1587 52 img/s
+epoch 1 step 1000/1333 loss 0.1647 1614 img/s
+epoch 1: {"auc_any": 0.9702, "auc_epidural": 0.9401, "auc_intraparenchymal": 0.9795, "auc_intraventricular": 0.9908, "auc_subarachnoid": 0.9503, "auc_subdural": 0.954, "auc_mean": 0.9642, "wlogloss_uncalibrated": 0.1451, "epoch_seconds": 105.0814, "img_per_s": 1623.7311}
+epoch 2 step 0/1333 loss 0.1430 49 img/s
+epoch 2 step 1000/1333 loss 0.1523 1617 img/s
+epoch 2: {"auc_any": 0.9732, "auc_epidural": 0.9526, "auc_intraparenchymal": 0.9837, "auc_intraventricular": 0.99, "auc_subarachnoid": 0.9588, "auc_subdural": 0.9586, "auc_mean": 0.9695, "wlogloss_uncalibrated": 0.0915, "epoch_seconds": 104.9587, "img_per_s": 1625.6306}
+epoch 3 step 0/1333 loss 0.1707 59 img/s
+epoch 3 step 1000/1333 loss 0.1394 1625 img/s
+epoch 3: {"auc_any": 0.9754, "auc_epidural": 0.9574, "auc_intraparenchymal": 0.9831, "auc_intraventricular": 0.9922, "auc_subarachnoid": 0.9558, "auc_subdural": 0.9613, "auc_mean": 0.9709, "wlogloss_uncalibrated": 0.0979, "epoch_seconds": 104.5339, "img_per_s": 1632.2366}
+epoch 4 step 0/1333 loss 0.1191 49 img/s
+epoch 4 step 1000/1333 loss 0.1242 1611 img/s
+epoch 4: {"auc_any": 0.976, "auc_epidural": 0.954, "auc_intraparenchymal": 0.9829, "auc_intraventricular": 0.9919, "auc_subarachnoid": 0.9567, "auc_subdural": 0.9619, "auc_mean": 0.9706, "wlogloss_uncalibrated": 0.0968, "epoch_seconds": 105.2961, "img_per_s": 1620.4216}
+epoch 5 step 0/1333 loss 0.1490 56 img/s
+epoch 5 step 1000/1333 loss 0.1149 1626 img/s
+epoch 5: {"auc_any": 0.9759, "auc_epidural": 0.9523, "auc_intraparenchymal": 0.9828, "auc_intraventricular": 0.992, "auc_subarachnoid": 0.9567, "auc_subdural": 0.9624, "auc_mean": 0.9704, "wlogloss_uncalibrated": 0.0938, "epoch_seconds": 104.3188, "img_per_s": 1635.6013}
+wrote train predictions (15282 series, 110 s)
+wrote val predictions (3231 series, 25 s)
+wrote test predictions (3231 series, 24 s)
+Runner terminated.
+✓ App completed. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-4nwwXXAwcEVpTx7dq1vlEi

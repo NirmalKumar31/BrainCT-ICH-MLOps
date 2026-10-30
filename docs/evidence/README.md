@@ -7,9 +7,15 @@ phantoms or dashboards only; no patient image is in this repository.
 
 | File | What it shows |
 |---|---|
-| [`mlflow_training_curves.png`](mlflow_training_curves.png), [`mlflow_runs.json`](mlflow_runs.json) | All four training runs from the MLflow store: per-epoch validation AUC (CNNs) and log loss (series models) |
-| [`certification_summary.json`](certification_summary.json) | Deployed-chain test metrics, FP32 vs INT8, from `make export` |
-| [`../figures/roc_test.png`](../figures/roc_test.png), [`../figures/calibration_test.png`](../figures/calibration_test.png) | Test ROC and calibration of the deployed chain |
+| [`modal_full_data_training_curves.png`](modal_full_data_training_curves.png), [`modal_full_data_curves.json`](modal_full_data_curves.json) | Full-data (all of RSNA) ResNet-50 runs on a Modal A100: per-epoch validation AUC and series-model log loss |
+| [`modal/`](modal/) | Logs of the full-data pipeline: ingest (753 s, 21,744 series), both trainings (`nvidia-smi`, throughput), series model, export and certification |
+| [`full_data_certification.json`](full_data_certification.json), [`full_data_model_card.json`](full_data_model_card.json) | Deployed full-data chain on the test set (FP32 and INT8, per label, CIs) and the served model card |
+| [`full_data_e2e_real_series_local.json`](full_data_e2e_real_series_local.json), [`full_data_live_performance_local.json`](full_data_live_performance_local.json) | 60 real held-out series through the API (x86-certified, ARM-served) and the live metrics from their feedback |
+| [`full_data_benchmark_modal_cpu.json`](full_data_benchmark_modal_cpu.json), [`../benchmark_full_resnet50.json`](../benchmark_full_resnet50.json) | Latency on Modal x86 and on the M4 |
+| [`../figures/full/`](../figures/full/) | Test ROC and calibration of the deployed full-data chain |
+| [`mlflow_training_curves.png`](mlflow_training_curves.png), [`mlflow_runs.json`](mlflow_runs.json) | Laptop-sample runs (ResNet-18) from the MLflow store: per-epoch validation AUC (CNNs) and log loss (series models) |
+| [`certification_summary.json`](certification_summary.json) | Laptop-sample chain test metrics, FP32 vs INT8, from `make export` |
+| [`../figures/roc_test.png`](../figures/roc_test.png), [`../figures/calibration_test.png`](../figures/calibration_test.png) | Test ROC and calibration of the laptop-sample chain |
 | [`ddp_gloo_2proc.log`](ddp_gloo_2proc.log) | Distributed (DDP) training with 2 processes |
 | [`quant_variants_x86_epyc_milan.json`](quant_variants_x86_epyc_milan.json) | INT8 schemes measured on the GKE x86 CPU (the incident in `../decisions.md`) |
 
@@ -30,7 +36,7 @@ phantoms or dashboards only; no patient image is in this repository.
 |---|---|
 | [`kind_load_steps.md`](kind_load_steps.md), [`kind_hpa_timeline.txt`](kind_hpa_timeline.txt) | In-cluster step load and HPA scaling on a 4-vCPU VM |
 
-## Kubernetes, cloud (GKE Autopilot)
+## Kubernetes, cloud (GKE Autopilot, ResNet-18 bundle)
 
 | File | What it shows |
 |---|---|

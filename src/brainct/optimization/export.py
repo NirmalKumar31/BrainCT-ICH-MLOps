@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -161,6 +162,8 @@ def selftest_volume(size: int = IMAGE_SIZE, slices: int = 12) -> np.ndarray:
 
 
 def git_sha() -> str:
+    if sha := os.environ.get("BRAINCT_GIT_SHA"):  # set by the cloud images, which ship no .git
+        return sha
     try:
         return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
@@ -351,7 +354,7 @@ def main(argv: list[str] | None = None) -> None:
         "onnx_parity_max_abs": parity,
         "quantization": {
             "format": "QDQ",
-            "weights": "int8 per-channel",
+            "weights": "uint8 per-channel",
             "activations": "uint8, percentile 99.99",
             "fp32_nodes": excluded,
             "calibration_slices": args.calib_slices,
@@ -360,7 +363,8 @@ def main(argv: list[str] | None = None) -> None:
     }
     card["intended_use"] = (
         "Research and engineering demonstration only. Not a medical device; not validated for "
-        "clinical use. Trained on a 2,065-series sample of RSNA 2019 (single source)."
+        f"clinical use. Trained on {card['provenance']['data']['series']:,} series of RSNA 2019 "
+        "(single source)."
     )
     write_card(stage, card)
     shutil.rmtree(args.out, ignore_errors=True)

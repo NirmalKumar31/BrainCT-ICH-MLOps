@@ -17,10 +17,10 @@ pytestmark = pytest.mark.skipif(
     not (REAL_BUNDLE / "model_card.json").exists(), reason="no trained bundle"
 )
 
-# Regression floors for the deployed chain, set a margin below the certified v0.2.0 bundle
-# (macro AUC 0.920, study AUC 0.948, weighted log loss 0.123). A retrain that falls below
-# these does not ship.
-GATES = {"auc_macro": 0.90, "study_any_auc": 0.93, "weighted_log_loss_max": 0.135}
+# Regression floors for the deployed chain, set a margin below the certified full-data bundle
+# (ResNet-50 on all of RSNA: macro AUC 0.981, study AUC 0.978, weighted log loss 0.066). A
+# retrain that falls below these does not ship.
+GATES = {"auc_macro": 0.97, "study_any_auc": 0.97, "weighted_log_loss_max": 0.075}
 
 
 @pytest.fixture(scope="module")

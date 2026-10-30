@@ -1,0 +1,74 @@
+warning: `VIRTUAL_ENV=/Users/nirmalkumar/.pyenv/versions/3.12.3` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+✓ Initialized. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-9p5jNWQw5dzfcq9qEF3DRf
+✓ Created objects.
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/cloud/modal_pipeline.py
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/configs
+├── ✓ Uploaded PythonPackage:brainct
+├── ✓ Created Function ingest.
+├── ✓ Created Function train.
+└── ✓ Created Function finish.
+staged 21744 series to local disk in 205 s
++ /usr/local/bin/python -m brainct.training.train_seq --config /app/configs/full_resnet50_25d.yaml --set data_dir=/local/rsna out_dir=/runs
+2026/10/30 00:05:21 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git SHA is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/30 00:05:21 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git branch is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/30 00:05:21 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git repository URL is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+epoch 0: train 55.644 val wlogloss 0.0748
+epoch 1: train 53.351 val wlogloss 0.0762
+epoch 2: train 52.458 val wlogloss 0.0748
+epoch 3: train 51.791 val wlogloss 0.0741
+epoch 4: train 50.800 val wlogloss 0.0746
+epoch 5: train 50.380 val wlogloss 0.0741
+epoch 6: train 49.248 val wlogloss 0.0756
+epoch 7: train 48.748 val wlogloss 0.0748
+epoch 8: train 48.058 val wlogloss 0.0760
+epoch 9: train 47.205 val wlogloss 0.0763
+epoch 10: train 46.371 val wlogloss 0.0772
+epoch 11: train 45.393 val wlogloss 0.0783
+{"best_val_wlogloss": 0.0741023412367292}
++ /usr/local/bin/python -m brainct.evaluation --compare /runs/full_resnet50_25d:cnn /runs/full_resnet50_25d:seq
+| Model | Macro AUC (95% CI) | Weighted log loss | Study AUC (any) | AUC epidural | AUC intraparenchymal | AUC intraventricular | AUC subarachnoid | AUC subdural |
+|---|---|---|---|---|---|---|---|---|
+| full_resnet50_25d / cnn | 0.973 (0.969–0.976) | 0.077 (0.073–0.081) | 0.977 (0.972–0.983) | 0.960 | 0.984 | 0.992 | 0.962 | 0.961 |
+| full_resnet50_25d / seq | 0.979 (0.975–0.982) | 0.068 (0.064–0.072) | 0.978 (0.973–0.984) | 0.964 | 0.987 | 0.994 | 0.975 | 0.973 |
+[modal-client] 2026-10-29T18:44:06-0600 Timed out waiting for final app logs.
+✓ App completed. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-9p5jNWQw5dzfcq9qEF3DRf

@@ -1,0 +1,147 @@
+warning: `VIRTUAL_ENV=/Users/nirmalkumar/.pyenv/versions/3.12.3` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+✓ Initialized. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-Na6i9j8GUf1F7tAAqFwttJ
+✓ Created objects.
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/cloud/modal_pipeline.py
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/configs
+├── ✓ Uploaded PythonPackage:brainct
+├── ✓ Created Function ingest.
+├── ✓ Created Function train.
+└── ✓ Created Function finish.
+staged 21744 series to local disk in 33 s
++ /usr/local/bin/python -m brainct.training.train_seq --config /app/configs/full_resnet50_2d.yaml --set data_dir=/local/rsna out_dir=/runs
+2026/10/30 00:02:12 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git SHA is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/30 00:02:12 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git branch is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+2026/10/30 00:02:12 WARNING mlflow.utils.git_utils: Failed to import Git (the Git executable is probably not on your PATH), so Git repository URL is not available. Error: Failed to initialize: Bad git executable.
+The git executable must be specified in one of the following ways:
+    - be included in your $PATH
+    - be set via $GIT_PYTHON_GIT_EXECUTABLE
+    - explicitly set via git.refresh(<full-path-to-git-executable>)
+All git commands will error until this is rectified.
+This initial message can be silenced or aggravated in the future by setting the
+$GIT_PYTHON_REFRESH environment variable. Use one of the following values:
+    - quiet|q|silence|s|silent|none|n|0: for no message or exception
+    - warn|w|warning|log|l|1: for a warning message (logging level CRITICAL, displayed by default)
+    - error|e|exception|raise|r|2: for a raised exception
+Example:
+    export GIT_PYTHON_REFRESH=quiet
+epoch 0: train 59.366 val wlogloss 0.0726
+epoch 1: train 55.870 val wlogloss 0.0730
+epoch 2: train 54.610 val wlogloss 0.0723
+epoch 3: train 53.662 val wlogloss 0.0708
+epoch 4: train 52.438 val wlogloss 0.0711
+epoch 5: train 51.949 val wlogloss 0.0703
+epoch 6: train 50.915 val wlogloss 0.0715
+epoch 7: train 50.167 val wlogloss 0.0718
+epoch 8: train 49.449 val wlogloss 0.0721
+epoch 9: train 48.255 val wlogloss 0.0721
+epoch 10: train 47.662 val wlogloss 0.0717
+epoch 11: train 46.552 val wlogloss 0.0740
+epoch 12: train 45.568 val wlogloss 0.0765
+epoch 13: train 44.402 val wlogloss 0.0745
+{"best_val_wlogloss": 0.07034536223885868}
++ /usr/local/bin/python -m brainct.evaluation --compare /runs/full_resnet50_2d:cnn /runs/full_resnet50_2d:seq
+| Model | Macro AUC (95% CI) | Weighted log loss | Study AUC (any) | AUC epidural | AUC intraparenchymal | AUC intraventricular | AUC subarachnoid | AUC subdural |
+|---|---|---|---|---|---|---|---|---|
+| full_resnet50_2d / cnn | 0.973 (0.969–0.975) | 0.078 (0.074–0.083) | 0.977 (0.972–0.982) | 0.964 | 0.982 | 0.991 | 0.961 | 0.961 |
+| full_resnet50_2d / seq | 0.982 (0.979–0.984) | 0.065 (0.061–0.070) | 0.979 (0.974–0.984) | 0.972 | 0.989 | 0.994 | 0.979 | 0.974 |
++ /usr/local/bin/python -m brainct.optimization.export --run /runs/full_resnet50_2d --out /runs/full_resnet50_2d/bundle --data-dir /local/rsna
+/root/brainct/optimization/export.py:52: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+/root/brainct/optimization/export.py:67: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+/usr/local/lib/python3.12/site-packages/torch/onnx/_internal/torchscript_exporter/symbolic_opset9.py:4604: UserWarning: Exporting a model to ONNX with a batch_size other than 1, with a variable length with GRU can cause an error when running the ONNX model with a different batch size. Make sure to save the model with a batch size of 1, or define the initial states (h0/c0) as inputs of the model. 
+  return _generic_rnn(
+ONNX FP32 vs PyTorch max |logit diff| = 2.10e-05
+Collecting tensor data and making histogram ...
+Finding optimal threshold for each tensor using 'percentile' algorithm ...
+Number of tensors : 127
+Number of histogram bins : 2048
+Percentile : (0.010000000000005116,99.99)
+WARNING:root:Quantized bias `onnx::Conv_548` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_539` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_542` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_545` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_557` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_560` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_566` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_578` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_575` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_617` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_614` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_674` exceeds the range of a int32. The bias scale is too small.
+WARNING:root:Quantized bias `onnx::Conv_671` exceeds the range of a int32. The bias scale is too small.
+quantized in 104 s; FP32 nodes kept: ['/windowing/Clip', '/windowing/Concat', '/windowing/Div', '/windowing/Div_1', '/windowing/Gather', '/windowing/Gather_1', '/windowing/Gather_2', '/windowing/Gather_3', '/windowing/Mul', '/windowing/Reshape', '/windowing/Shape_3', '/windowing/Sub', '/windowing/Sub_1', '/windowing/Unsqueeze', '/windowing/Unsqueeze_1', '/windowing/Unsqueeze_2', '/windowing/Unsqueeze_3', '/windowing/Unsqueeze_4']
+fp32: chain on val+test in 1646 s
+int8: chain on val+test in 1401 s
+self-test golden written; INT8 vs FP32 on build machine: 0.0651
+fp32/cnn: macro AUC 0.9725  wlogloss 0.0782  study AUC 0.9768
+fp32/seq: macro AUC 0.9820  wlogloss 0.0655  study AUC 0.9794
+int8/cnn: macro AUC 0.9708  wlogloss 0.0801  study AUC 0.9748
+int8/seq: macro AUC 0.9812  wlogloss 0.0663  study AUC 0.9779
+sizes MB: {'cnn.fp32.onnx': 94.0, 'cnn.int8.onnx': 24.1}
+bundle written to /runs/full_resnet50_2d/bundle
++ /usr/local/bin/python -m brainct.optimization.benchmark --run /runs/full_resnet50_2d --work /runs/full_resnet50_2d/bundle.work --out /runs/full_resnet50_2d/benchmark.json
+{
+  "pytorch_fp32": {
+    "slice": {
+      "p50_ms": 45.22020749982403,
+      "p95_ms": 47.524898049732656
+    },
+    "series_cnn_only": {
+      "p50_ms": 1034.9012974998004,
+      "p95_ms": 1087.2929544502313
+    }
+  },
+  "onnx_fp32": {
+    "slice": {
+      "p50_ms": 26.16800899977534,
+      "p95_ms": 27.333734899775664
+    },
+    "series_chain": {
+      "p50_ms": 706.7395240001133,
+      "p95_ms": 743.2824804004667
+    },
+    "size_mb": 94.006481
+  },
+  "onnx_int8": {
+    "slice": {
+      "p50_ms": 17.573273999914818,
+      "p95_ms": 19.406505050255873
+    },
+    "series_chain": {
+      "p50_ms": 498.860246500044,
+      "p95_ms": 510.65842669981976
+    },
+    "size_mb": 24.069858
+  }
+}
+[modal-client] 2026-10-29T19:45:25-0600 Timed out waiting for final app logs.
+✓ App completed. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-Na6i9j8GUf1F7tAAqFwttJ

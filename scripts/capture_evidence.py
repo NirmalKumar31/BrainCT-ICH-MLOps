@@ -47,10 +47,10 @@ def api_examples(url: str) -> None:
     (OUT / "example_errors.json").write_text(json.dumps(errors, indent=2))
 
 
-def training_curves() -> None:
+def training_curves(db: Path = ROOT / "mlruns/mlflow.db", stem: str = "mlflow") -> None:
     import mlflow
 
-    mlflow.set_tracking_uri(f"sqlite:///{ROOT}/mlruns/mlflow.db")
+    mlflow.set_tracking_uri(f"sqlite:///{db}")
     client = mlflow.MlflowClient()
     exp = client.get_experiment_by_name("brainct")
     runs = client.search_runs([exp.experiment_id], order_by=["start_time ASC"])
@@ -82,12 +82,15 @@ def training_curves() -> None:
         ax.legend(fontsize=8, frameon=False)
         ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
-    fig.savefig(OUT / "mlflow_training_curves.png", dpi=140)
-    (OUT / "mlflow_runs.json").write_text(json.dumps(rows, indent=2))
+    fig.savefig(OUT / f"{stem}_training_curves.png", dpi=140)
+    (OUT / f"{stem}_runs.json").write_text(json.dumps(rows, indent=2))
 
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
+    if sys.argv[1:2] == ["curves"]:  # curves DB STEM: e.g. the MLflow store pulled from Modal
+        training_curves(Path(sys.argv[2]), sys.argv[3])
+        sys.exit()
     api_examples(sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8000")
     training_curves()
     print("wrote", sorted(p.name for p in OUT.iterdir()))

@@ -54,7 +54,9 @@ def main() -> None:
     p_off = calibrate(offline["logits"], cal)
     index = {sid: i for i, sid in enumerate(offline["series_id"])}
 
-    test = load_series(ROOT / "data/rsna", "test")
+    # Every locally cached series the certified run held out: the local split for a model trained
+    # on this cache, the overlap with the full-data test split for the Modal-trained model.
+    test = [s for s in load_series(ROOT / "data/rsna") if s.series_id in index]
     rng = np.random.default_rng(0)
     pos = [s for s in test if s.labels[:, 0].any()]
     neg = [s for s in test if not s.labels[:, 0].any()]

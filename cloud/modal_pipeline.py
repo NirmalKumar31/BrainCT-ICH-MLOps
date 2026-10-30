@@ -24,13 +24,23 @@ from pathlib import Path
 import modal
 
 ROOT = Path(__file__).resolve().parents[1]
+try:  # provenance for the model card; the image itself ships no .git
+    GIT_SHA = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True)
+except Exception:
+    GIT_SHA = "unknown"
 GPU = os.environ.get("BRAINCT_GPU", "A100-40GB")
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
     .apt_install("libgl1", "libglib2.0-0")
     .pip_install_from_requirements(str(ROOT / "cloud/requirements-train.txt"))
-    .env({"MLFLOW_DISABLE_AGENT_HINT": "1", "PYTHONUNBUFFERED": "1"})
+    .env(
+        {
+            "MLFLOW_DISABLE_AGENT_HINT": "1",
+            "PYTHONUNBUFFERED": "1",
+            "BRAINCT_GIT_SHA": GIT_SHA.strip(),
+        }
+    )
     .add_local_python_source("brainct")
     .add_local_dir(ROOT / "configs", "/app/configs")
 )
@@ -40,19 +50,21 @@ app = modal.App("brainct", image=image)
 
 RUNS, LOCAL_ROOT = Path("/runs"), Path("/local")
 # SQLite must not live on a network volume (locking): work on a local copy, sync it back.
+# One store per config: copy-back is last-writer-wins, so parallel runs sharing one file
+# would erase each other's runs.
 MLFLOW_LOCAL = Path("/local/mlflow.db")
 MLFLOW = f"sqlite:///{MLFLOW_LOCAL}"
 
 
-def mlflow_pull() -> None:
+def mlflow_pull(config: str) -> None:
     MLFLOW_LOCAL.parent.mkdir(parents=True, exist_ok=True)
-    if (RUNS / "mlflow.db").exists():
-        shutil.copyfile(RUNS / "mlflow.db", MLFLOW_LOCAL)
+    if (RUNS / f"mlflow-{config}.db").exists():
+        shutil.copyfile(RUNS / f"mlflow-{config}.db", MLFLOW_LOCAL)
 
 
-def mlflow_push() -> None:
+def mlflow_push(config: str) -> None:
     if MLFLOW_LOCAL.exists():
-        shutil.copyfile(MLFLOW_LOCAL, RUNS / "mlflow.db")
+        shutil.copyfile(MLFLOW_LOCAL, RUNS / f"mlflow-{config}.db")
 
 
 def sh(*args: str, env: dict | None = None) -> None:
@@ -117,10 +129,10 @@ def train(config: str = "full_resnet50_2d", dataset: str = "rsna", overrides: st
 
     def committer() -> None:
         while not stop.wait(300):
-            mlflow_push()
+            mlflow_push(config)
             runs_vol.commit()
 
-    mlflow_pull()
+    mlflow_pull(config)
     threading.Thread(target=committer, daemon=True).start()
     try:
         sh(
@@ -135,7 +147,7 @@ def train(config: str = "full_resnet50_2d", dataset: str = "rsna", overrides: st
         )
     finally:
         stop.set()
-        mlflow_push()
+        mlflow_push(config)
         runs_vol.commit()
 
 
@@ -160,9 +172,9 @@ def finish(
     run = TrainConfig.load(f"/app/configs/{config}.yaml", sets).run_dir()
     env = {"MLFLOW_TRACKING_URI": MLFLOW}
     cfg = f"/app/configs/{config}.yaml"
-    mlflow_pull()
+    mlflow_pull(config)
     sh(sys.executable, "-m", "brainct.training.train_seq", "--config", cfg, "--set", *sets, env=env)
-    mlflow_push()
+    mlflow_push(config)
     runs_vol.commit()
     sh(sys.executable, "-m", "brainct.evaluation", "--compare", f"{run}:cnn", f"{run}:seq")
     runs_vol.commit()

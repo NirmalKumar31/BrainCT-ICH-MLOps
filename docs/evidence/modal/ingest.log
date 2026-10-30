@@ -1,0 +1,75 @@
+warning: `VIRTUAL_ENV=/Users/nirmalkumar/.pyenv/versions/3.12.3` does not match the project environment path `.venv` and will be ignored; use `--active` to target the active environment instead
+✓ Initialized. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-IybptrDOk2eFRJkSeJxCmZ
+✓ Created objects.
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/cloud/modal_pipeline.py
+├── ✓ Uploaded /Users/nirmalkumar/Agentic Research 
+│   Engine/BrainCT-ICH-MLOps/configs
+├── ✓ Uploaded PythonPackage:brainct
+├── ✓ Created Function ingest.
+├── ✓ Created Function train.
+└── ✓ Created Function finish.
++ /usr/local/bin/python -m brainct.data.ingest --out /data/rsna --regions 32 --gib-per-region 4.3
+2026-10-29 23:27:08,373 INFO downloading slice_labels.csv
+2026-10-29 23:27:09,054 INFO downloading rescale_values.csv
+2026-10-29 23:27:44,259 INFO kept 815 series / 28258 slices, dropped 29, 30 s
+2026-10-29 23:28:14,264 INFO kept 1728 series / 59934 slices, dropped 29, 60 s
+2026-10-29 23:28:44,266 INFO kept 2599 series / 90040 slices, dropped 29, 90 s
+2026-10-29 23:29:14,271 INFO kept 3471 series / 120217 slices, dropped 29, 120 s
+2026-10-29 23:29:44,276 INFO kept 4262 series / 147694 slices, dropped 29, 150 s
+2026-10-29 23:30:14,281 INFO kept 5062 series / 175498 slices, dropped 29, 180 s
+2026-10-29 23:30:44,282 INFO kept 5858 series / 203048 slices, dropped 29, 210 s
+2026-10-29 23:31:14,283 INFO kept 6798 series / 235989 slices, dropped 29, 240 s
+2026-10-29 23:31:44,284 INFO kept 7693 series / 267057 slices, dropped 29, 270 s
+2026-10-29 23:32:14,285 INFO kept 8515 series / 295817 slices, dropped 29, 300 s
+2026-10-29 23:32:44,286 INFO kept 9355 series / 324635 slices, dropped 29, 330 s
+2026-10-29 23:33:14,287 INFO kept 10218 series / 354433 slices, dropped 29, 360 s
+2026-10-29 23:33:44,290 INFO kept 11087 series / 384536 slices, dropped 29, 390 s
+2026-10-29 23:34:14,291 INFO kept 11943 series / 414277 slices, dropped 29, 420 s
+2026-10-29 23:34:44,294 INFO kept 12813 series / 444268 slices, dropped 29, 450 s
+2026-10-29 23:35:14,302 INFO kept 13713 series / 475395 slices, dropped 29, 480 s
+2026-10-29 23:35:44,303 INFO kept 14604 series / 506091 slices, dropped 29, 510 s
+2026-10-29 23:36:14,305 INFO kept 15538 series / 538272 slices, dropped 29, 540 s
+2026-10-29 23:36:44,306 INFO kept 16454 series / 569972 slices, dropped 29, 570 s
+2026-10-29 23:37:14,307 INFO kept 17356 series / 601046 slices, dropped 29, 600 s
+2026-10-29 23:37:44,309 INFO kept 18225 series / 631003 slices, dropped 29, 630 s
+2026-10-29 23:38:14,310 INFO kept 19115 series / 661568 slices, dropped 29, 660 s
+2026-10-29 23:38:44,310 INFO kept 20068 series / 694621 slices, dropped 29, 690 s
+2026-10-29 23:39:14,310 INFO kept 21001 series / 727006 slices, dropped 29, 720 s
+2026-10-29 23:39:44,311 INFO kept 21738 series / 752586 slices, dropped 29, 750 s
+2026-10-29 23:39:47,363 INFO done: {"source": "ianpan/rsna-intracranial-hemorrhage-16bit-png", "revision": "c40c72b1c01479e2ef08cfd2bf68014960dbadc9", "tar_bytes": 144276295680, "series": 21744, "slices": 752802, "dropped_partial_series": 29, "image_size": 224, "seconds": 753.1}
++ /usr/local/bin/python -m brainct.data.split --data /data/rsna
+{
+  "seed": 2026,
+  "train": {
+    "patients": 13256,
+    "any": 5356,
+    "epidural": 217,
+    "intraparenchymal": 3265,
+    "intraventricular": 2306,
+    "subarachnoid": 2420,
+    "subdural": 2390
+  },
+  "val": {
+    "patients": 2841,
+    "any": 1148,
+    "epidural": 47,
+    "intraparenchymal": 707,
+    "intraventricular": 500,
+    "subarachnoid": 529,
+    "subdural": 484
+  },
+  "test": {
+    "patients": 2841,
+    "any": 1148,
+    "epidural": 46,
+    "intraparenchymal": 702,
+    "intraventricular": 497,
+    "subarachnoid": 502,
+    "subdural": 500
+  }
+}
+[modal-client] 2026-10-29T17:40:02-0600 Timed out waiting for final app logs.
+✓ App completed. View run at 
+https://modal.com/apps/nirmalkumar31/main/ap-IybptrDOk2eFRJkSeJxCmZ

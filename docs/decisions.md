@@ -37,7 +37,12 @@ scale (0.897 vs 0.902 for the CNN alone, 0.915 vs 0.920 with the series model, C
 overlapping). The series model already sees every slice, so the 2.5D channels were redundant.
 The deployed bundle is therefore the single-slice CNN + series model: the better point
 estimate and a simpler input contract. The code supports both (`context` in the config and
-the model card); with the full 750k-slice dataset the 2.5D result may differ.
+the model card).
+
+**Re-run on all of RSNA (ResNet-50, Modal A100), same conclusion with tighter CIs.** The series
+model lifted macro AUC from 0.973 to 0.982 (CIs 0.969–0.975 vs 0.979–0.984, no overlap). 2.5D
+input tied the single-slice CNN (0.973 vs 0.973) and was worse once the series model was on top
+(0.979 vs 0.982). Deployed: single-slice ResNet-50 + series model.
 
 **Windowing inside the network graph.** The ONNX model takes HU; the window/clamp/normalise
 ops are part of the graph. The service cannot window differently from training, and the
@@ -59,7 +64,15 @@ on a laptop GPU and helps the rare subtypes, but shifts predicted probabilities.
 Platt scaling is fit on validation (of the *deployed* INT8 chain) and frozen; model selection
 uses validation mean AUC, which the prior shift does not affect.
 
-**ResNet-18 at 224 px, fp16 autocast on Apple MPS.** Measured on the M4: ~37 img/s sustained
+**Full data: ResNet-50, bf16, channels-last on an A100 (Modal).** 6 epochs, batch 128,
+lr 8e-4; ~1,600 img/s. The 75 GB HU cache is copied from the network volume to local NVMe
+before training (random 3-slice reads from a network volume would starve the GPU), and
+validation/test inference uses fixed-size batches across series: with per-series batches cuDNN
+re-benchmarked every new shape and inference was ~12× slower. Checkpoints are committed to the
+volume every 5 minutes and training resumes from `last.pt`, so a preempted container
+continues where it stopped.
+
+**ResNet-18 at 224 px, fp16 autocast on Apple MPS (laptop sample).** Measured on the M4: ~37 img/s sustained
 training (9-channel 2.5D input; ~40 img/s for 3 channels), the fastest of ResNet-18/34, EfficientNet-B0 and ConvNeXt-nano;
 bf16 was slower than fp16 on MPS. channels_last was slower.
 
@@ -139,3 +152,19 @@ ARM (and x86 with VNNI) do not have this path, so local tests could not see it.
 
 **Lesson.** Certify quantized models on the deployment CPU family, and make every replica
 prove it at startup; "same image" does not mean "same numerics".
+
+## Incident: parallel cloud runs erased each other's MLflow runs
+
+**What happened.** The two full-data trainings (2D and 2.5D) ran in parallel on Modal. MLflow
+used SQLite, which must not live on a network volume, so each container worked on a local copy
+of one shared `mlflow.db` and copied it back. The copy-back is last-writer-wins: the store that
+came back held only the 2.5D runs.
+
+**Impact.** None on the models: checkpoints, predictions, reports and the bundle are written
+per run directory. The 2D experiment history was recovered from the run logs
+(`scripts/plot_modal_curves.py`, `docs/evidence/modal/`).
+
+**Fix.** One store per config (`mlflow-<config>.db`), so parallel runs never share a file.
+A tracking server (or a database that supports concurrent writers) is the production answer.
+The model card now also records the git commit of cloud runs (`BRAINCT_GIT_SHA` baked into the
+Modal image, which ships no `.git`).

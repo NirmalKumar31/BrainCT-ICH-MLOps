@@ -1,0 +1,143 @@
+{
+  "name": "brainct-ich",
+  "version": "0.2.1",
+  "contract": {
+    "labels": [
+      "any",
+      "epidural",
+      "intraparenchymal",
+      "intraventricular",
+      "subarachnoid",
+      "subdural"
+    ],
+    "context": 0,
+    "image_size": 224,
+    "windows": [
+      [
+        40.0,
+        80.0
+      ],
+      [
+        80.0,
+        200.0
+      ],
+      [
+        600.0,
+        2800.0
+      ]
+    ],
+    "input": "HU, int16-rounded, padded square + area-resized",
+    "batch": 16
+  },
+  "thresholds": {
+    "cnn": {
+      "any": 0.43962128437808495,
+      "epidural": 0.18645831790731401,
+      "intraparenchymal": 0.3419064187656411,
+      "intraventricular": 0.3776349909059572,
+      "subarachnoid": 0.2708963179453903,
+      "subdural": 0.3128124080699036,
+      "screening_any": 0.06751562053242967,
+      "study_any": 0.6962615192251194
+    },
+    "seq": {
+      "any": 0.43981177169524444,
+      "epidural": 0.12189001099466412,
+      "intraparenchymal": 0.4143260661321972,
+      "intraventricular": 0.41248088705442687,
+      "subarachnoid": 0.3489559300998332,
+      "subdural": 0.34684464232119816,
+      "screening_any": 0.11342100911859447,
+      "study_any": 0.3251412439993259
+    }
+  },
+  "metrics_test": {
+    "fp32": {
+      "cnn": {
+        "auc_macro": 0.972548216075206,
+        "auc_macro_ci": [
+          0.9693367103619959,
+          0.9753971181660945
+        ],
+        "weighted_log_loss": 0.07821199507609822,
+        "study_any_auc": 0.9767973504397991,
+        "auc": {
+          "any": 0.9757897048930589,
+          "epidural": 0.9644927719600506,
+          "intraparenchymal": 0.9818281084077289,
+          "intraventricular": 0.9911848452409647,
+          "subarachnoid": 0.9606991088320987,
+          "subdural": 0.9612947571173345
+        }
+      },
+      "seq": {
+        "auc_macro": 0.9820006619322087,
+        "auc_macro_ci": [
+          0.9792105189662621,
+          0.9844351568469806
+        ],
+        "weighted_log_loss": 0.0654583760900602,
+        "study_any_auc": 0.9794297334608297,
+        "auc": {
+          "any": 0.9841577883845336,
+          "epidural": 0.9719730440322681,
+          "intraparenchymal": 0.988947903643301,
+          "intraventricular": 0.9944504103082278,
+          "subarachnoid": 0.9785591460575366,
+          "subdural": 0.9739156791673842
+        }
+      }
+    },
+    "int8": {
+      "cnn": {
+        "auc_macro": 0.9708425169122213,
+        "auc_macro_ci": [
+          0.9673464786140802,
+          0.9739244676339718
+        ],
+        "weighted_log_loss": 0.08013770281259769,
+        "study_any_auc": 0.974826328421346,
+        "auc": {
+          "any": 0.9750828346736239,
+          "epidural": 0.9621130912321318,
+          "intraparenchymal": 0.981250891059725,
+          "intraventricular": 0.9896780179815209,
+          "subarachnoid": 0.9562659544823011,
+          "subdural": 0.960664312044026
+        }
+      },
+      "seq": {
+        "auc_macro": 0.9812002603270985,
+        "auc_macro_ci": [
+          0.9779966208462898,
+          0.983803713504838
+        ],
+        "weighted_log_loss": 0.06628134873086852,
+        "study_any_auc": 0.9778711220735469,
+        "auc": {
+          "any": 0.9838321798462045,
+          "epidural": 0.9693596252725658,
+          "intraparenchymal": 0.9885923954370112,
+          "intraventricular": 0.994016786494484,
+          "subarachnoid": 0.9776301623847917,
+          "subdural": 0.9737704125275336
+        }
+      }
+    },
+    "n": {
+      "slices": 111941,
+      "series": 3231,
+      "patients": 2841
+    }
+  },
+  "intended_use": "Research and engineering demonstration only. Not a medical device; not validated for clinical use. Trained on 21,744 series of RSNA 2019 (single source).",
+  "precision": "int8",
+  "selftest": {
+    "status": "run",
+    "max_prob_diff": 0.0022108373073558563,
+    "limit": 0.02,
+    "passed": true
+  },
+  "created": "2026-10-30T01:44:37+00:00",
+  "git_sha": "706c8230df6e442e3632160dfb7622be3a32bb2d"
+}

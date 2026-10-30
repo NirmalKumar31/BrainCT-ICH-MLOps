@@ -26,8 +26,8 @@ An end-to-end ML system that reads a whole non-contrast head CT series and repor
 and per study, the probability of intracranial hemorrhage and its five subtypes:
 
 - **data** streamed straight from a 144 GB archive into an HU cache (parallel HTTP ranges);
-- **training** on GPU (Apple MPS locally; CUDA + multi-GPU DDP; Modal cloud-GPU pipeline),
-  tracked in MLflow: a slice CNN plus a whole-series BiGRU;
+- **training** on all 752,802 RSNA slices on a cloud A100 (Modal), on Apple MPS locally, and
+  multi-GPU with DDP: a slice CNN plus a whole-series BiGRU, tracked in MLflow;
 - **evaluation** with patient-level bootstrap CIs, a 2×2 ablation, calibration and operating
   points, all fit on validation;
 - **INT8 ONNX** certified through the serving code, on two CPU architectures;
@@ -44,13 +44,14 @@ comes from [`docs/results.md`](docs/results.md); proof (screenshots, logs, raw o
 
 ## Highlights
 
-| | Result (held-out test: 266 patients, 315 series, 10,934 slices) |
+| | Result (held-out test: 2,841 patients, 3,231 series, 111,941 slices; all of RSNA) |
 |---|---|
-| **Deployed model** | macro ROC AUC **0.920** (95% CI 0.855–0.957, patient bootstrap); RSNA weighted log loss **0.123**; study-level AUC "any" **0.949** |
-| **Series model vs single-slice CNN** | +0.018 macro AUC; subarachnoid 0.907 → **0.932**, subdural 0.916 → **0.939** |
-| **Calibrated, with operating points** | ECE ≤ 0.012 per label (slice level); screening: 97.2% sensitivity at 68.3% specificity |
-| **INT8** | same AUC as FP32 (0.920); 11.3 MB vs 44.7 MB; 32-slice series in **331 ms** vs 675 ms (FP32 ONNX) vs 1,027 ms (PyTorch) |
-| **Served = certified, in the cloud** | 60 real series through GKE: mean \|Δp\| **0.0009** vs offline; study AUC 0.920 vs 0.922 |
+| **Deployed model** | ResNet-50 + series model, INT8: macro ROC AUC **0.981** (95% CI 0.978–0.984, patient bootstrap); RSNA weighted log loss **0.066**; study-level AUC "any" **0.978** |
+| **Series model vs single-slice CNN** | 0.973 → **0.982** macro AUC (FP32), CIs do not overlap; subarachnoid 0.961 → **0.979**, subdural 0.961 → **0.974** |
+| **Trained on a cloud GPU** | whole 144 GB archive ingested in 753 s; ResNet-50 at ~1,600 img/s on an A100 (Modal), ~30 min per model |
+| **Calibrated, with operating points** | ECE ≤ 0.004 per label (slice level); screening: 95.3% sensitivity at 92.5% specificity |
+| **INT8** | macro AUC 0.981 vs 0.982 FP32; 24 MB vs 94 MB; 32-slice series in **586 ms** vs 1,836 ms (FP32 ONNX) vs 5,792 ms (PyTorch) on an M4 |
+| **Served = certified, across CPUs** | certified on x86, served on ARM: 60 real series through the API, mean \|Δp\| **0.00026**; on GKE (ResNet-18 bundle) **0.0009** |
 | **Caught a cloud-only numerics bug** | INT8 diverged by 0.56 on GKE's AMD EPYC (no VNNI); fixed with uint8 weights + a per-pod startup self-test with FP32 fallback |
 | **GKE autoscaling** | HPA 1 → 4 pods; 0 errors up to 16 concurrent clients; Terraform apply → test → destroy |
 | **Monitoring that fired** | drift PSI and latency alerts fired and reached Alertmanager; live AUC 0.959 from 80 labelled studies via `/v1/feedback` |
@@ -63,8 +64,9 @@ comes from [`docs/results.md`](docs/results.md); proof (screenshots, logs, raw o
 | | Reference (BrainCT-Hemorrhage-MLOps) | This repository |
 |---|---|---|
 | Model input | single slice | whole series (CNN + BiGRU series model); 2.5D tested |
-| Training data | all 752,803 slices (A100, Slurm) | 9.5% sample on a laptop GPU; full-data Modal pipeline included |
-| Test macro AUC | **0.977** (ResNet-50, full data) | 0.920 (ResNet-18, 9.5% data; different test set) |
+| Training data | all 752,803 slices (A100, Slurm) | all 752,802 slices (A100, Modal, one command per stage); 9.5% sample on a laptop |
+| Test macro AUC | 0.977 (ResNet-50, single slice) | **0.981** INT8 / **0.982** FP32 (ResNet-50 + series model, CI 0.979–0.984; different patient split) |
+| Subtypes it calls weakest | subarachnoid, subdural | subarachnoid 0.979, subdural 0.974 |
 | Probabilities | thresholds | Platt-calibrated, ECE reported, screening + study operating points |
 | What is certified | exported model | the deployed chain, through the serving code, on ARM and x86 |
 | Experiment tracking | Weights & Biases | MLflow |
@@ -76,9 +78,9 @@ comes from [`docs/results.md`](docs/results.md); proof (screenshots, logs, raw o
 | Cloud | GKE Autopilot, Terraform, Helm, HPA | same, plus PDB, NetworkPolicy (Dataplane V2), least-privilege node SA |
 | Deployment testing | manual | kind + Helm e2e in CI on every push; real-series e2e against certified outputs |
 
-The reference model is more accurate: it trained a larger network on ten times the data. The
-Modal pipeline here (`cloud/modal_pipeline.py`) runs the same code on all of RSNA with a
-ResNet-50 on an A100; its results will be added when that run is done.
+Both projects test on a patient-level split of all of RSNA, but not the same split, so the
+comparison is not exact. Here the same single-slice ResNet-50 reaches 0.973 (CI 0.969–0.975);
+the gain comes from the series model reading the whole scan.
 
 ## Architecture
 
@@ -163,6 +165,7 @@ uv run torchrun --nproc_per_node 4 -m brainct.training.train_cnn --config config
 modal run cloud/modal_pipeline.py::ingest
 modal run cloud/modal_pipeline.py::train --config full_resnet50_2d
 modal run cloud/modal_pipeline.py::finish --config full_resnet50_2d
+modal volume get brainct-runs full_resnet50_2d/bundle artifacts/
 
 # GKE (costs money while it runs)
 terraform -chdir=infra/terraform apply
@@ -178,9 +181,10 @@ weights-free stand-in model of the same interface; that is what CI deploys.
 
 ## Known limitations
 
-- **Epidural is not usable:** 39 test slices from 5 patients; AUC 0.760 (CI 0.37–0.95), AP 0.014.
-- **Small sample of one source:** 9.5% of RSNA 2019, no external validation; ablation
-  differences are smaller than their CIs (one seed each).
+- **Epidural stays weak:** AUC 0.969, but AP 0.30 and 40% sensitivity at the F1 threshold
+  (500 test slices); it is the rarest subtype.
+- **One source, one seed:** RSNA 2019 only, no external validation; each ablation arm was
+  trained once.
 - **Series-model training embeddings are in-sample** (from the CNN trained on those slices).
 - **Study-level probabilities are not re-calibrated:** slice-level ECE ≤ 0.012, but the max over
   a series showed ECE 0.08–0.12 on 80 live-labelled studies.
@@ -188,8 +192,11 @@ weights-free stand-in model of the same interface; that is what CI deploys.
   so with several replicas feedback must reach the pod that served the request. A shared store
   (e.g. Redis) or an offline join from prediction logs is needed in production.
 - **CAM heatmaps come from the CNN**, not the series model; they show attention, not a segmentation.
-- **CPU-only serving.** On GKE, a 2-vCPU EPYC pod serves ~1.4 series/s; the 4th Autopilot
-  pod took ~4–5 minutes to come up (capacity provisioning).
+- **CPU-only serving.** On GKE, a 2-vCPU EPYC pod served ~1.4 series/s with the ResNet-18
+  bundle; the ResNet-50 bundle is ~1.8× slower per series. The 4th Autopilot pod took ~4–5
+  minutes to come up (capacity provisioning).
+- **The GKE load and monitoring tests ran on the ResNet-18 bundle**, before the full-data model
+  existed; the full-data bundle was verified locally (self-test, release gates, real-series e2e).
 
 ## Data and license
 
