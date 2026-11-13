@@ -7,12 +7,12 @@
 # serving/requirements.txt is exported from uv.lock (CI fails if it drifts):
 #   uv export --frozen --no-dev --extra serve --no-emit-project --no-hashes -o serving/requirements.txt
 
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159 AS deps
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928 AS deps
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 COPY serving/requirements.txt /tmp/requirements.txt
 RUN python -m venv /opt/venv && /opt/venv/bin/pip install -r /tmp/requirements.txt
 
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+FROM python:3.15-slim@sha256:65a65fc7b30b06cb6df4930fd4650697cb23f4c2698ab81fc87e4b031bc36928
 ARG BUNDLE=artifacts/bundle
 ARG VERSION=dev
 ARG GIT_SHA=unknown
